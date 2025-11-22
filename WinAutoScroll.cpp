@@ -14,6 +14,7 @@
 #pragma comment (lib, "User32.lib")
 #pragma comment (lib, "Gdi32.lib")
 #pragma comment (lib, "Shell32.lib")
+#pragma comment (lib, "Kernel32.lib")
 
 using namespace Gdiplus;
 
@@ -30,6 +31,7 @@ using namespace Gdiplus;
 #define ID_MENU_RELOAD      1001
 #define ID_MENU_EXIT        1002
 #define ID_MENU_PAUSE       1003
+#define ID_MENU_STATS       1004
 
 // --- Enums ---
 typedef enum { STATE_IDLE, STATE_PRIMED, STATE_SCROLLING, STATE_STOPPING } ScrollState;
@@ -37,10 +39,10 @@ typedef enum { SHAPE_CIRCLE, SHAPE_SQUARE, SHAPE_CROSS } Shape;
 typedef enum { MODE_TOGGLE, MODE_HOLD } TriggerMode;
 typedef enum { CURSOR_NONE, CURSOR_ALL, CURSOR_NS, CURSOR_WE, CURSOR_NWSE, CURSOR_NESW } ScrollCursorType;
 
-// --- Config ---
+// --- Config & Stats ---
 typedef struct {
     int min_scroll, max_scroll; float sensitivity, ramp_exponent;
-    int update_frequency; // New: Hz
+    int update_frequency; // Hz
     int trigger_vk_code, trigger_middle_mouse, emulate_touchpad_scrolling;
     TriggerMode trigger_mode;
     int middle_mouse_passthrough, keyboard_passthrough, drag_threshold;
@@ -48,10 +50,17 @@ typedef struct {
     int show_indicator; Shape indicator_shape; int indicator_size, indicator_cross_thickness;
     int indicator_color_r, indicator_color_g, indicator_color_b, indicator_color_a;
     float indicator_thickness; int indicator_filled;
+    int fun_stats; // Opt-out stats
 } AppConfig;
 
-// Initialized with default 60Hz
-AppConfig g_config = { 1, 1000, 0.01f, 4.0f, 60, 0, 1, 0, MODE_HOLD, 1, 1, 40, SHAPE_CROSS, 1, 10, 1, SHAPE_CIRCLE, 25, 10, 100, 100, 100, 180, 1.5f, 0 };
+typedef struct {
+    unsigned long long total_pixels;
+    unsigned long long dir_up, dir_down, dir_left, dir_right;
+} Stats;
+
+// Default Config (Frequency 60Hz, Stats On)
+AppConfig g_config = { 1, 1000, 0.01f, 4.0f, 60, 0, 1, 0, MODE_HOLD, 1, 1, 40, SHAPE_CROSS, 1, 10, 1, SHAPE_CIRCLE, 25, 10, 100, 100, 100, 180, 1.5f, 0, 1 };
+Stats g_stats = {0};
 
 // --- Global State ---
 HHOOK g_hMouseHook, g_hKeyboardHook;
@@ -62,6 +71,7 @@ ULONG_PTR g_gdiplusToken;
 HWND g_hMainWnd, g_hOverlayWnd;
 HINSTANCE g_hInstance;
 ScrollCursorType g_currentCursorType = CURSOR_NONE;
+char g_statsPath[MAX_PATH];
 
 // --- Cached Cursors ---
 HCURSOR g_hCursorAll = NULL, g_hCursorNS = NULL, g_hCursorWE = NULL, g_hCursorNWSE = NULL, g_hCursorNESW = NULL;
@@ -74,6 +84,9 @@ DWORD WINAPI ScrollingThread(LPVOID);
 void StartScrolling();
 void StopScrolling();
 void LoadConfig(const char*);
+void LoadStats();
+void SaveStats();
+void ShowStatsDialog();
 void AddTrayIcon();
 void RemoveTrayIcon();
 void ShowContextMenu();
@@ -93,6 +106,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     SetProcessDPIAware();
     g_hInstance = hInstance;
     
+    // Resolve stats path once
+    GetModuleFileName(NULL, g_statsPath, MAX_PATH);
+    char* lastSlash = strrchr(g_statsPath, '\\');
+    if (lastSlash) *(lastSlash + 1) = 0;
+    strcat_s(g_statsPath, MAX_PATH, "stats.ini");
+
     WNDCLASSEX wc = {0};
     wc.cbSize = sizeof(WNDCLASSEX); wc.lpfnWndProc = WndProc; wc.hInstance = hInstance; wc.lpszClassName = "ScrollAppHidden";
     RegisterClassEx(&wc);
@@ -102,6 +121,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     GdiplusStartup(&g_gdiplusToken, &gdiplusStartupInput, NULL);
     
     LoadConfig("config.ini");
+    LoadStats();
     LoadCursors();
     CreateOverlayWindow();
     AddTrayIcon();
@@ -127,6 +147,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             switch (LOWORD(wParam)) {
                 case ID_MENU_EDIT_CONFIG: ShellExecute(NULL, "edit", "config.ini", NULL, NULL, SW_SHOWNORMAL); break;
                 case ID_MENU_RELOAD: LoadConfig("config.ini"); LoadCursors(); break;
+                case ID_MENU_STATS: ShowStatsDialog(); break;
                 case ID_MENU_EXIT: DestroyWindow(hWnd); break;
                 case ID_MENU_PAUSE: g_isPaused = !g_isPaused; if(g_isPaused) StopScrolling(); UpdateTrayIconState(); break;
             }
@@ -156,7 +177,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             break;
         case WM_APP_KEY_UP: if (g_config.trigger_mode == MODE_HOLD) StopScrolling(); break;
         case WM_APP_CANCEL: if (g_scrollState == STATE_PRIMED) g_scrollState = STATE_IDLE; else StopScrolling(); break;
-        case WM_DESTROY: PostQuitMessage(0); break;
+        case WM_DESTROY: SaveStats(); PostQuitMessage(0); break;
         default: return DefWindowProc(hWnd, msg, wParam, lParam);
     }
     return 0;
@@ -177,6 +198,7 @@ void StopScrolling() {
     if (g_scrollState == STATE_SCROLLING) {
         HideOverlay();
         g_scrollState = STATE_STOPPING;
+        if (g_config.fun_stats) SaveStats(); // Save on stop to prevent data loss
     }
 }
 
@@ -223,7 +245,6 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter) {
         int vS = 0, hS = 0;
         bool act = false;
         
-        // Deadzone check
         if (g_config.dead_zone_shape == SHAPE_SQUARE) act = (abs(dx) > g_config.dead_zone || abs(dy) > g_config.dead_zone);
         else if (g_config.dead_zone_shape == SHAPE_CROSS) act = (abs(dx) > g_config.cross_dead_zone_thickness || abs(dy) > g_config.cross_dead_zone_thickness);
         else act = (sqrt((double)dx*dx + (double)dy*dy) > g_config.dead_zone);
@@ -242,9 +263,17 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter) {
             }
             if (vS != 0) SendMouseInput(MOUSEEVENTF_WHEEL, (DWORD)vS);
             if (hS != 0) SendMouseInput(MOUSEEVENTF_HWHEEL, (DWORD)hS);
+            
+            // Stats Tracking
+            if (g_config.fun_stats) {
+                g_stats.total_pixels += abs(vS) + abs(hS);
+                if (vS > 0) g_stats.dir_up += vS;
+                if (vS < 0) g_stats.dir_down += abs(vS); // Scroll Down sends negative
+                if (hS > 0) g_stats.dir_right += hS;
+                if (hS < 0) g_stats.dir_left += abs(hS);
+            }
         }
 
-        // Cursor Updates
         ScrollCursorType target = CURSOR_ALL;
         if (act) {
             double angle = atan2((double)dy, (double)dx) * 180.0 / M_PI;
@@ -257,9 +286,8 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter) {
         }
         if (g_currentCursorType != target) SetScrollCursor(target);
         
-        // Configurable Frequency (Hz -> Milliseconds)
         int freq = g_config.update_frequency;
-        if (freq <= 0) freq = 60; // Safety fallback
+        if (freq <= 0) freq = 60;
         Sleep(1000 / freq);
     }
     RestoreSystemCursors();
@@ -283,6 +311,168 @@ void SendMouseInput(DWORD flags, DWORD mouseData) {
     input.mi.dwFlags = flags;
     input.mi.mouseData = mouseData;
     SendInput(1, &input, sizeof(INPUT));
+}
+
+// --- Stats & Config ---
+void LoadStats() {
+    char buf[32];
+    GetPrivateProfileString("Stats", "TotalPixels", "0", buf, 32, g_statsPath); g_stats.total_pixels = strtoull(buf, NULL, 10);
+    GetPrivateProfileString("Stats", "Up", "0", buf, 32, g_statsPath); g_stats.dir_up = strtoull(buf, NULL, 10);
+    GetPrivateProfileString("Stats", "Down", "0", buf, 32, g_statsPath); g_stats.dir_down = strtoull(buf, NULL, 10);
+    GetPrivateProfileString("Stats", "Left", "0", buf, 32, g_statsPath); g_stats.dir_left = strtoull(buf, NULL, 10);
+    GetPrivateProfileString("Stats", "Right", "0", buf, 32, g_statsPath); g_stats.dir_right = strtoull(buf, NULL, 10);
+}
+
+void SaveStats() {
+    char buf[32];
+    sprintf_s(buf, "%llu", g_stats.total_pixels); WritePrivateProfileString("Stats", "TotalPixels", buf, g_statsPath);
+    sprintf_s(buf, "%llu", g_stats.dir_up); WritePrivateProfileString("Stats", "Up", buf, g_statsPath);
+    sprintf_s(buf, "%llu", g_stats.dir_down); WritePrivateProfileString("Stats", "Down", buf, g_statsPath);
+    sprintf_s(buf, "%llu", g_stats.dir_left); WritePrivateProfileString("Stats", "Left", buf, g_statsPath);
+    sprintf_s(buf, "%llu", g_stats.dir_right); WritePrivateProfileString("Stats", "Right", buf, g_statsPath);
+}
+
+void ShowStatsDialog() {
+    // Conversion: Assuming 96 DPI, 1 pixel approx 0.26mm. 
+    double meters = (double)g_stats.total_pixels * 0.0254 / 96.0; // Virtual Meters
+    char msg[512];
+    
+    const char* favDir = "None";
+    unsigned long long maxD = 0;
+    if (g_stats.dir_up > maxD) { maxD = g_stats.dir_up; favDir = "Up"; }
+    if (g_stats.dir_down > maxD) { maxD = g_stats.dir_down; favDir = "Down"; }
+    if (g_stats.dir_left > maxD) { maxD = g_stats.dir_left; favDir = "Left"; }
+    if (g_stats.dir_right > maxD) { maxD = g_stats.dir_right; favDir = "Right"; }
+
+    sprintf_s(msg, 
+        "WinAutoScroll Statistics:\n\n"
+        "Total Distance Scrolled: %.2f virtual meters\n"
+        "Total 'Pixels' Scrolled: %llu\n\n"
+        "Direction Breakdown:\n"
+        "  Up: %llu\n  Down: %llu\n  Left: %llu\n  Right: %llu\n\n"
+        "Most Popular Direction: %s",
+        meters, g_stats.total_pixels, 
+        g_stats.dir_up, g_stats.dir_down, g_stats.dir_left, g_stats.dir_right, 
+        favDir);
+
+    MessageBox(g_hMainWnd, msg, "WinAutoScroll Stats", MB_OK | MB_ICONINFORMATION);
+}
+
+char* Trim(char* str) {
+    char* end; while (isspace((unsigned char)*str)) str++; if (*str == 0) return str;
+    end = str + strlen(str) - 1; while (end > str && isspace((unsigned char)*end)) end--;
+    *(end + 1) = 0; return str;
+}
+
+void LoadConfig(const char* filename) {
+    FILE* file; if (fopen_s(&file, filename, "r") != 0 || !file) return;
+    char line[256];
+    while (fgets(line, sizeof(line), file)) {
+        if (line[0] == '#' || line[0] == '\n') continue;
+        char* delim = strchr(line, '='); if (!delim) continue;
+        *delim = 0; char* key = Trim(line), *val = Trim(delim + 1);
+        if (!strcmp(key, "min_scroll")) g_config.min_scroll = atoi(val);
+        else if (!strcmp(key, "max_scroll")) g_config.max_scroll = atoi(val);
+        else if (!strcmp(key, "sensitivity")) g_config.sensitivity = (float)atof(val);
+        else if (!strcmp(key, "ramp_exponent")) g_config.ramp_exponent = (float)atof(val);
+        else if (!strcmp(key, "update_frequency")) g_config.update_frequency = atoi(val);
+        else if (!strcmp(key, "trigger_middle_mouse")) g_config.trigger_middle_mouse = atoi(val);
+        else if (!strcmp(key, "trigger_vk_code")) g_config.trigger_vk_code = strtol(val, NULL, 0);
+        else if (!strcmp(key, "emulate_touchpad_scrolling")) g_config.emulate_touchpad_scrolling = atoi(val);
+        else if (!strcmp(key, "middle_mouse_passthrough")) g_config.middle_mouse_passthrough = atoi(val);
+        else if (!strcmp(key, "keyboard_passthrough")) g_config.keyboard_passthrough = atoi(val);
+        else if (!strcmp(key, "drag_threshold")) g_config.drag_threshold = atoi(val);
+        else if (!strcmp(key, "dead_zone")) g_config.dead_zone = atoi(val);
+        else if (!strcmp(key, "cross_dead_zone_thickness")) g_config.cross_dead_zone_thickness = atoi(val);
+        else if (!strcmp(key, "show_indicator")) g_config.show_indicator = atoi(val);
+        else if (!strcmp(key, "indicator_size")) g_config.indicator_size = atoi(val);
+        else if (!strcmp(key, "indicator_cross_thickness")) g_config.indicator_cross_thickness = atoi(val);
+        else if (!strcmp(key, "indicator_color_r")) g_config.indicator_color_r = atoi(val);
+        else if (!strcmp(key, "indicator_color_g")) g_config.indicator_color_g = atoi(val);
+        else if (!strcmp(key, "indicator_color_b")) g_config.indicator_color_b = atoi(val);
+        else if (!strcmp(key, "indicator_color_a")) g_config.indicator_color_a = atoi(val);
+        else if (!strcmp(key, "indicator_thickness")) g_config.indicator_thickness = (float)atof(val);
+        else if (!strcmp(key, "indicator_filled")) g_config.indicator_filled = atoi(val);
+        else if (!strcmp(key, "fun_stats")) g_config.fun_stats = atoi(val);
+        else if (!strcmp(key, "trigger_mode")) g_config.trigger_mode = (_stricmp(val, "hold") == 0) ? MODE_HOLD : MODE_TOGGLE;
+        else if (!strcmp(key, "dead_zone_shape")) {
+            if (_stricmp(val, "square") == 0) g_config.dead_zone_shape = SHAPE_SQUARE;
+            else if (_stricmp(val, "cross") == 0) g_config.dead_zone_shape = SHAPE_CROSS;
+            else g_config.dead_zone_shape = SHAPE_CIRCLE;
+        }
+        else if (!strcmp(key, "indicator_shape")) {
+            if (_stricmp(val, "square") == 0) g_config.indicator_shape = SHAPE_SQUARE;
+            else if (_stricmp(val, "cross") == 0) g_config.indicator_shape = SHAPE_CROSS;
+            else g_config.indicator_shape = SHAPE_CIRCLE;
+        }
+    }
+    fclose(file);
+}
+
+void UpdateTrayIconState() {
+    NOTIFYICONDATA nid = {sizeof(NOTIFYICONDATA)}; nid.hWnd = g_hMainWnd; nid.uID = 1;
+    nid.uFlags = NIF_TIP | NIF_ICON;
+
+    HMODULE hShell32 = LoadLibraryEx("shell32.dll", NULL, LOAD_LIBRARY_AS_DATAFILE);
+    HICON hBaseIcon = NULL;
+    if (hShell32) {
+        hBaseIcon = (HICON)LoadImage(hShell32, MAKEINTRESOURCE(250), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE);
+        FreeLibrary(hShell32);
+    }
+    if (!hBaseIcon) hBaseIcon = LoadIcon(NULL, IDI_APPLICATION);
+
+    if (g_isPaused) {
+        Bitmap* bmp = Bitmap::FromHICON(hBaseIcon);
+        if (bmp) {
+            Graphics g(bmp);
+            g.SetSmoothingMode(SmoothingModeAntiAlias);
+            Pen redPen(Color(255, 255, 0, 0), 2);
+            int w = bmp->GetWidth(); int h = bmp->GetHeight();
+            g.DrawLine(&redPen, 0, 0, w, h);
+            g.DrawLine(&redPen, 0, h, w, 0);
+            
+            HICON hPausedIcon = NULL;
+            bmp->GetHICON(&hPausedIcon);
+            delete bmp;
+            DestroyIcon(hBaseIcon);
+            nid.hIcon = hPausedIcon;
+        } else {
+            nid.hIcon = hBaseIcon;
+        }
+        strcpy_s(nid.szTip, "WinAutoScroll - Paused");
+    } else {
+        nid.hIcon = hBaseIcon;
+        strcpy_s(nid.szTip, "WinAutoScroll - Active");
+    }
+
+    Shell_NotifyIcon(NIM_MODIFY, &nid);
+    DestroyIcon(nid.hIcon); 
+}
+
+void AddTrayIcon() {
+    NOTIFYICONDATA nid = {sizeof(NOTIFYICONDATA)}; nid.hWnd = g_hMainWnd; nid.uID = 1;
+    nid.uFlags = NIF_MESSAGE; nid.uCallbackMessage = WM_TRAYICON;
+    Shell_NotifyIcon(NIM_ADD, &nid);
+    UpdateTrayIconState();
+}
+
+void RemoveTrayIcon() {
+    NOTIFYICONDATA nid = {sizeof(NOTIFYICONDATA)}; nid.hWnd = g_hMainWnd; nid.uID = 1;
+    Shell_NotifyIcon(NIM_DELETE, &nid);
+}
+
+void ShowContextMenu() {
+    POINT pt; GetCursorPos(&pt);
+    HMENU hMenu = CreatePopupMenu();
+    AppendMenu(hMenu, MF_STRING, ID_MENU_PAUSE, g_isPaused ? "Resume" : "Pause");
+    AppendMenu(hMenu, MF_STRING, ID_MENU_STATS, "View Stats");
+    AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+    AppendMenu(hMenu, MF_STRING, ID_MENU_EDIT_CONFIG, "Edit Config");
+    AppendMenu(hMenu, MF_STRING, ID_MENU_RELOAD, "Reload Config");
+    AppendMenu(hMenu, MF_STRING, ID_MENU_EXIT, "Exit");
+    SetForegroundWindow(g_hMainWnd);
+    TrackPopupMenu(hMenu, TPM_BOTTOMALIGN | TPM_LEFTALIGN, pt.x, pt.y, 0, g_hMainWnd, NULL);
+    DestroyMenu(hMenu);
 }
 
 // --- Overlay & Graphics ---
@@ -379,124 +569,4 @@ void RestoreSystemCursors() {
         g_currentCursorType = CURSOR_NONE;
         SystemParametersInfo(SPI_SETCURSORS, 0, NULL, SPIF_SENDCHANGE);
     }
-}
-
-// --- Config Utils ---
-char* Trim(char* str) {
-    char* end; while (isspace((unsigned char)*str)) str++; if (*str == 0) return str;
-    end = str + strlen(str) - 1; while (end > str && isspace((unsigned char)*end)) end--;
-    *(end + 1) = 0; return str;
-}
-
-void LoadConfig(const char* filename) {
-    FILE* file; if (fopen_s(&file, filename, "r") != 0 || !file) return;
-    char line[256];
-    while (fgets(line, sizeof(line), file)) {
-        if (line[0] == '#' || line[0] == '\n') continue;
-        char* delim = strchr(line, '='); if (!delim) continue;
-        *delim = 0; char* key = Trim(line), *val = Trim(delim + 1);
-        if (!strcmp(key, "min_scroll")) g_config.min_scroll = atoi(val);
-        else if (!strcmp(key, "max_scroll")) g_config.max_scroll = atoi(val);
-        else if (!strcmp(key, "sensitivity")) g_config.sensitivity = (float)atof(val);
-        else if (!strcmp(key, "ramp_exponent")) g_config.ramp_exponent = (float)atof(val);
-        else if (!strcmp(key, "update_frequency")) g_config.update_frequency = atoi(val);
-        else if (!strcmp(key, "trigger_middle_mouse")) g_config.trigger_middle_mouse = atoi(val);
-        else if (!strcmp(key, "trigger_vk_code")) g_config.trigger_vk_code = strtol(val, NULL, 0);
-        else if (!strcmp(key, "emulate_touchpad_scrolling")) g_config.emulate_touchpad_scrolling = atoi(val);
-        else if (!strcmp(key, "middle_mouse_passthrough")) g_config.middle_mouse_passthrough = atoi(val);
-        else if (!strcmp(key, "keyboard_passthrough")) g_config.keyboard_passthrough = atoi(val);
-        else if (!strcmp(key, "drag_threshold")) g_config.drag_threshold = atoi(val);
-        else if (!strcmp(key, "dead_zone")) g_config.dead_zone = atoi(val);
-        else if (!strcmp(key, "cross_dead_zone_thickness")) g_config.cross_dead_zone_thickness = atoi(val);
-        else if (!strcmp(key, "show_indicator")) g_config.show_indicator = atoi(val);
-        else if (!strcmp(key, "indicator_size")) g_config.indicator_size = atoi(val);
-        else if (!strcmp(key, "indicator_cross_thickness")) g_config.indicator_cross_thickness = atoi(val);
-        else if (!strcmp(key, "indicator_color_r")) g_config.indicator_color_r = atoi(val);
-        else if (!strcmp(key, "indicator_color_g")) g_config.indicator_color_g = atoi(val);
-        else if (!strcmp(key, "indicator_color_b")) g_config.indicator_color_b = atoi(val);
-        else if (!strcmp(key, "indicator_color_a")) g_config.indicator_color_a = atoi(val);
-        else if (!strcmp(key, "indicator_thickness")) g_config.indicator_thickness = (float)atof(val);
-        else if (!strcmp(key, "indicator_filled")) g_config.indicator_filled = atoi(val);
-        else if (!strcmp(key, "trigger_mode")) g_config.trigger_mode = (_stricmp(val, "hold") == 0) ? MODE_HOLD : MODE_TOGGLE;
-        else if (!strcmp(key, "dead_zone_shape")) {
-            if (_stricmp(val, "square") == 0) g_config.dead_zone_shape = SHAPE_SQUARE;
-            else if (_stricmp(val, "cross") == 0) g_config.dead_zone_shape = SHAPE_CROSS;
-            else g_config.dead_zone_shape = SHAPE_CIRCLE;
-        }
-        else if (!strcmp(key, "indicator_shape")) {
-            if (_stricmp(val, "square") == 0) g_config.indicator_shape = SHAPE_SQUARE;
-            else if (_stricmp(val, "cross") == 0) g_config.indicator_shape = SHAPE_CROSS;
-            else g_config.indicator_shape = SHAPE_CIRCLE;
-        }
-    }
-    fclose(file);
-}
-
-void UpdateTrayIconState() {
-    NOTIFYICONDATA nid = {sizeof(NOTIFYICONDATA)}; nid.hWnd = g_hMainWnd; nid.uID = 1;
-    nid.uFlags = NIF_TIP | NIF_ICON;
-
-    // 1. Load Base Icon
-    HMODULE hShell32 = LoadLibraryEx("shell32.dll", NULL, LOAD_LIBRARY_AS_DATAFILE);
-    HICON hBaseIcon = NULL;
-    if (hShell32) {
-        hBaseIcon = (HICON)LoadImage(hShell32, MAKEINTRESOURCE(250), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE);
-        FreeLibrary(hShell32);
-    }
-    if (!hBaseIcon) hBaseIcon = LoadIcon(NULL, IDI_APPLICATION);
-
-    // 2. Process State
-    if (g_isPaused) {
-        // Draw "X" on icon
-        Bitmap* bmp = Bitmap::FromHICON(hBaseIcon);
-        if (bmp) {
-            Graphics g(bmp);
-            g.SetSmoothingMode(SmoothingModeAntiAlias);
-            Pen redPen(Color(255, 255, 0, 0), 2);
-            int w = bmp->GetWidth(); int h = bmp->GetHeight();
-            g.DrawLine(&redPen, 0, 0, w, h);
-            g.DrawLine(&redPen, 0, h, w, 0);
-            
-            HICON hPausedIcon = NULL;
-            bmp->GetHICON(&hPausedIcon);
-            delete bmp;
-            DestroyIcon(hBaseIcon);
-            nid.hIcon = hPausedIcon;
-        } else {
-            nid.hIcon = hBaseIcon;
-        }
-        strcpy_s(nid.szTip, "WinAutoScroll - Paused");
-    } else {
-        nid.hIcon = hBaseIcon;
-        strcpy_s(nid.szTip, "WinAutoScroll - Active");
-    }
-
-    // 3. Update
-    Shell_NotifyIcon(NIM_MODIFY, &nid);
-    DestroyIcon(nid.hIcon); 
-}
-
-void AddTrayIcon() {
-    NOTIFYICONDATA nid = {sizeof(NOTIFYICONDATA)}; nid.hWnd = g_hMainWnd; nid.uID = 1;
-    nid.uFlags = NIF_MESSAGE; nid.uCallbackMessage = WM_TRAYICON;
-    Shell_NotifyIcon(NIM_ADD, &nid);
-    UpdateTrayIconState();
-}
-
-void RemoveTrayIcon() {
-    NOTIFYICONDATA nid = {sizeof(NOTIFYICONDATA)}; nid.hWnd = g_hMainWnd; nid.uID = 1;
-    Shell_NotifyIcon(NIM_DELETE, &nid);
-}
-
-void ShowContextMenu() {
-    POINT pt; GetCursorPos(&pt);
-    HMENU hMenu = CreatePopupMenu();
-    AppendMenu(hMenu, MF_STRING, ID_MENU_PAUSE, g_isPaused ? "Resume" : "Pause");
-    AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-    AppendMenu(hMenu, MF_STRING, ID_MENU_EDIT_CONFIG, "Edit Config");
-    AppendMenu(hMenu, MF_STRING, ID_MENU_RELOAD, "Reload Config");
-    AppendMenu(hMenu, MF_STRING, ID_MENU_EXIT, "Exit");
-    SetForegroundWindow(g_hMainWnd);
-    TrackPopupMenu(hMenu, TPM_BOTTOMALIGN | TPM_LEFTALIGN, pt.x, pt.y, 0, g_hMainWnd, NULL);
-    DestroyMenu(hMenu);
 }
