@@ -75,7 +75,7 @@ void LoadConfig(const char*);
 void AddTrayIcon();
 void RemoveTrayIcon();
 void ShowContextMenu();
-void UpdateTrayIconTooltip();
+void UpdateTrayIconState();
 void SetScrollCursor(ScrollCursorType);
 void RestoreSystemCursors();
 void CreateOverlayWindow();
@@ -94,7 +94,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     WNDCLASSEX wc = {0};
     wc.cbSize = sizeof(WNDCLASSEX); wc.lpfnWndProc = WndProc; wc.hInstance = hInstance; wc.lpszClassName = "ScrollAppHidden";
     RegisterClassEx(&wc);
-    g_hMainWnd = CreateWindowEx(0, "ScrollAppHidden", "ScrollApp", 0, 0, 0, 0, 0, HWND_MESSAGE, NULL, hInstance, NULL);
+    g_hMainWnd = CreateWindowEx(0, "ScrollAppHidden", "WinAutoScroll", 0, 0, 0, 0, 0, HWND_MESSAGE, NULL, hInstance, NULL);
 
     GdiplusStartupInput gdiplusStartupInput;
     GdiplusStartup(&g_gdiplusToken, &gdiplusStartupInput, NULL);
@@ -126,7 +126,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 case ID_MENU_EDIT_CONFIG: ShellExecute(NULL, "edit", "config.ini", NULL, NULL, SW_SHOWNORMAL); break;
                 case ID_MENU_RELOAD: LoadConfig("config.ini"); LoadCursors(); break;
                 case ID_MENU_EXIT: DestroyWindow(hWnd); break;
-                case ID_MENU_PAUSE: g_isPaused = !g_isPaused; if(g_isPaused) StopScrolling(); UpdateTrayIconTooltip(); break;
+                case ID_MENU_PAUSE: g_isPaused = !g_isPaused; if(g_isPaused) StopScrolling(); UpdateTrayIconState(); break;
             }
             break;
         case WM_APP_MBUTTON_DOWN:
@@ -182,19 +182,15 @@ void StopScrolling() {
 LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
     if (nCode == HC_ACTION) {
         MSLLHOOKSTRUCT* pMouse = (MSLLHOOKSTRUCT*)lParam;
-        if (pMouse->flags & LLMHF_INJECTED) return CallNextHookEx(g_hMouseHook, nCode, wParam, lParam); // Ignore own inputs
+        if (pMouse->flags & LLMHF_INJECTED) return CallNextHookEx(g_hMouseHook, nCode, wParam, lParam);
 
         if (!g_isPaused && g_config.trigger_middle_mouse) {
             if (wParam == WM_MBUTTONDOWN) { PostMessage(g_hMainWnd, WM_APP_MBUTTON_DOWN, 0, 0); return 1; }
             if (wParam == WM_MOUSEMOVE && g_scrollState == STATE_PRIMED) PostMessage(g_hMainWnd, WM_APP_MOUSE_MOVE, 0, 0);
             if (wParam == WM_MBUTTONUP) {
-                if (g_scrollState == STATE_PRIMED) {
-                     // Let logic handle the state change, but we must block this UP if we aren't passing through later
+                if (g_scrollState == STATE_PRIMED || g_scrollState == STATE_SCROLLING) {
                      PostMessage(g_hMainWnd, WM_APP_MBUTTON_UP, 0, 0);
                      return 1;
-                } else if (g_scrollState == STATE_SCROLLING) {
-                    PostMessage(g_hMainWnd, WM_APP_MBUTTON_UP, 0, 0);
-                    return 1; 
                 }
             }
         }
@@ -231,7 +227,6 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter) {
         else act = (sqrt((double)dx*dx + (double)dy*dy) > g_config.dead_zone);
 
         if (act) {
-            // Axis locking for CROSS
             if (g_config.dead_zone_shape == SHAPE_CROSS) {
                 if (abs(dx) <= g_config.cross_dead_zone_thickness) vS = -CalculateScrollAmount(dy, g_config.emulate_touchpad_scrolling);
                 else if (abs(dy) <= g_config.cross_dead_zone_thickness) hS = CalculateScrollAmount(dx, g_config.emulate_touchpad_scrolling);
@@ -251,10 +246,21 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter) {
         ScrollCursorType target = CURSOR_ALL;
         if (act) {
             double angle = atan2((double)dy, (double)dx) * 180.0 / M_PI;
-            if (fabs(angle) <= 22.5 || fabs(angle) >= 157.5) target = CURSOR_WE;
-            else if (angle > 67.5 && angle < 112.5) target = CURSOR_NS;
-            else if ((angle > 22.5 && angle < 67.5) || (angle < -112.5 && angle > -157.5)) target = CURSOR_NWSE;
-            else target = CURSOR_NESW;
+            
+            // WE: Left/Right (approx 0 and 180)
+            if (fabs(angle) <= 22.5 || fabs(angle) >= 157.5) {
+                target = CURSOR_WE;
+            } 
+            // NS: Up/Down (approx 90 and -90)
+            else if (fabs(angle) >= 67.5 && fabs(angle) <= 112.5) {
+                target = CURSOR_NS;
+            }
+            // Diagonals
+            else {
+                // If x and y signs match, it's NWSE (\)
+                if ((dx > 0 && dy > 0) || (dx < 0 && dy < 0)) target = CURSOR_NWSE;
+                else target = CURSOR_NESW; // Signs differ, NESW (/)
+            }
         }
         if (g_currentCursorType != target) SetScrollCursor(target);
         Sleep(10);
@@ -301,7 +307,7 @@ void RenderAndShowOverlay(POINT center) {
 
     Graphics g(hdcMem);
     g.SetSmoothingMode(SmoothingModeAntiAlias);
-    g.Clear(Color(0, 0, 0, 0)); // Transparent background
+    g.Clear(Color(0, 0, 0, 0)); 
 
     Color c(g_config.indicator_color_a, g_config.indicator_color_r, g_config.indicator_color_g, g_config.indicator_color_b);
     SolidBrush brush(c);
@@ -351,7 +357,6 @@ void LoadCursors() {
     g_hCursorWE = LoadDynamicCursor("%SystemRoot%\\Cursors\\lwe.cur");
     g_hCursorNWSE = LoadDynamicCursor("%SystemRoot%\\Cursors\\lnwse.cur");
     g_hCursorNESW = LoadDynamicCursor("%SystemRoot%\\Cursors\\lnesw.cur");
-    // Fallback if custom cursors missing
     if (!g_hCursorNS) g_hCursorNS = LoadCursor(NULL, IDC_SIZENS);
     if (!g_hCursorWE) g_hCursorWE = LoadCursor(NULL, IDC_SIZEWE);
     if (!g_hCursorNWSE) g_hCursorNWSE = LoadCursor(NULL, IDC_SIZENWSE);
@@ -429,19 +434,62 @@ void LoadConfig(const char* filename) {
     fclose(file);
 }
 
-void UpdateTrayIconTooltip() {
-    NOTIFYICONDATA nid = {sizeof(NOTIFYICONDATA)}; nid.hWnd = g_hMainWnd; nid.uID = 1; nid.uFlags = NIF_TIP;
-    strcpy_s(nid.szTip, g_isPaused ? "Scroll App - Paused" : "Scroll App - Active");
+void UpdateTrayIconState() {
+    NOTIFYICONDATA nid = {sizeof(NOTIFYICONDATA)}; nid.hWnd = g_hMainWnd; nid.uID = 1;
+    nid.uFlags = NIF_TIP | NIF_ICON;
+
+    // 1. Load the Base Mouse Icon
+    HMODULE hShell32 = LoadLibraryEx("shell32.dll", NULL, LOAD_LIBRARY_AS_DATAFILE);
+    HICON hBaseIcon = NULL;
+    if (hShell32) {
+        hBaseIcon = (HICON)LoadImage(hShell32, MAKEINTRESOURCE(250), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE);
+        FreeLibrary(hShell32);
+    }
+    if (!hBaseIcon) hBaseIcon = LoadIcon(NULL, IDI_APPLICATION);
+
+    // 2. Process Icon based on State
+    if (g_isPaused) {
+        // Create GDI+ Bitmap from the base icon
+        Bitmap* bmp = Bitmap::FromHICON(hBaseIcon);
+        if (bmp) {
+            Graphics g(bmp);
+            g.SetSmoothingMode(SmoothingModeAntiAlias);
+            
+            // Draw a Red "X"
+            Pen redPen(Color(255, 255, 0, 0), 6); // Red color, 2px thick
+            int w = bmp->GetWidth();
+            int h = bmp->GetHeight();
+            g.DrawLine(&redPen, 0, 0, w, h); // Top-Left to Bottom-Right
+            g.DrawLine(&redPen, 0, h, w, 0); // Bottom-Left to Top-Right
+
+            // Convert back to HICON
+            HICON hPausedIcon = NULL;
+            bmp->GetHICON(&hPausedIcon);
+            delete bmp;
+            DestroyIcon(hBaseIcon); // Destroy the clean original
+            
+            nid.hIcon = hPausedIcon; // Use the crossed-out one
+        } else {
+            nid.hIcon = hBaseIcon; // Fallback
+        }
+        strcpy_s(nid.szTip, "WinAutoScroll - Paused");
+    } else {
+        nid.hIcon = hBaseIcon;
+        strcpy_s(nid.szTip, "WinAutoScroll - Active");
+    }
+
+    // 3. Update Tray
     Shell_NotifyIcon(NIM_MODIFY, &nid);
+    
+    // Cleanup: The tray makes a copy of the image data, so we can destroy our local handle
+    DestroyIcon(nid.hIcon); 
 }
 
 void AddTrayIcon() {
     NOTIFYICONDATA nid = {sizeof(NOTIFYICONDATA)}; nid.hWnd = g_hMainWnd; nid.uID = 1;
-    nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP; nid.uCallbackMessage = WM_TRAYICON;
-    nid.hIcon = LoadIcon(NULL, IDI_APPLICATION); // Simple generic icon
-    strcpy_s(nid.szTip, "Scroll App");
+    nid.uFlags = NIF_MESSAGE; nid.uCallbackMessage = WM_TRAYICON;
     Shell_NotifyIcon(NIM_ADD, &nid);
-    UpdateTrayIconTooltip();
+    UpdateTrayIconState();
 }
 
 void RemoveTrayIcon() {
