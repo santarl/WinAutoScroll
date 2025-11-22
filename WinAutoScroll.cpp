@@ -19,7 +19,7 @@
 using namespace Gdiplus;
 
 // --- CONFIGURATION ---
-const char* REPO_SCRIPT_URL = "https://github.com/santarl/WinAutoScroll/raw/refs/heads/main/upload_stats.ps1";
+const char* REPO_SCRIPT_URL = "https://raw.githubusercontent.com/santarl/WinAutoScroll/refs/heads/main/upload_stats.ps1";
 
 // --- Constants & Messages ---
 #define WM_TRAYICON         (WM_APP + 1)
@@ -610,7 +610,7 @@ void UpdateTrayIconState()
         {
             Graphics g(bmp);
             g.SetSmoothingMode(SmoothingModeAntiAlias);
-            Pen redPen(Color(255, 255, 0, 0), 2);
+            Pen redPen(Color(220, 200, 15, 30), 8);
             int w = bmp->GetWidth();
             int h = bmp->GetHeight();
             g.DrawLine(&redPen, 0, 0, w, h);

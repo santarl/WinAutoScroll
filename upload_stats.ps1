@@ -43,61 +43,92 @@ function Set-IniValue {
     $newContent | Set-Content $Path
 }
 
-function Get-Remote-Stats {
-    try {
-        $jsonRaw = curl.exe -s -k -X GET $Url
-        if ($LASTEXITCODE -eq 0 -and $jsonRaw) {
-            return ($jsonRaw | ConvertFrom-Json)
-        }
-    } catch {}
-    
-    return $null
+function Get-Remote-Stats-With-Retry {
+    $attempt = 1
+    while ($true) {
+        Write-Host "Fetching global stats (Attempt $attempt)..." -NoNewline
+        
+        # Try curl (Primary)
+        try {
+            $jsonRaw = curl.exe -s -k -X GET $Url
+            if ($LASTEXITCODE -eq 0 -and $jsonRaw) {
+                if ($jsonRaw.Trim().StartsWith("{")) {
+                    Write-Host " OK" -ForegroundColor Green
+                    return ($jsonRaw | ConvertFrom-Json)
+                }
+            }
+        } catch {}
+
+        # Try PS (Fallback)
+        try {
+            $r = Invoke-RestMethod -Uri $Url -Method Get -ErrorAction Stop
+            Write-Host " OK" -ForegroundColor Green
+            return $r
+        } catch {}
+
+        Write-Host " Failed." -ForegroundColor Red
+        Write-Host "   [!] Connection failed. Retrying in 3 seconds... (Ctrl+C to cancel)" -ForegroundColor Gray
+        Start-Sleep -Seconds 3
+        $attempt++
+    }
 }
 
 function Upload-Data {
-    Write-Host "`n[Submitting Data...]" -ForegroundColor Cyan
+    Write-Host "`n[Step 1: Syncing with Server]" -ForegroundColor Cyan
     
-    $remote = Get-Remote-Stats
+    $remote = Get-Remote-Stats-With-Retry
     
-    $currentPixels = 0; $currentKm = 0.0
-    if ($remote) {
-        if ($remote.pixels) { $currentPixels = [long]$remote.pixels }
-        if ($remote.kilometres) { $currentKm = [double]$remote.kilometres }
+    if (-not $remote -or -not $remote.PSObject.Properties['pixels']) {
+        Write-Error "Critical Error: Data fetched but format is invalid."
+        Pause
+        return
     }
+
+    $currentPixels = [long]$remote.pixels
+    $currentKm     = [double]$remote.kilometres
 
     $addPixels = [long]$script:LocalPending
     $addKm     = $addPixels * 0.000000264583
     
     $newPixels = $currentPixels + $addPixels
     $newKm     = $currentKm + $addKm
+    $newKmRounded = [math]::Round($newKm, 2)
 
-    $body = @{ pixels = $newPixels; kilometres = $newKm } | ConvertTo-Json -Compress
+    $body = @{ pixels = $newPixels; kilometres = $newKmRounded } | ConvertTo-Json -Compress
     $tempFile = [System.IO.Path]::GetTempFileName()
     $body | Set-Content $tempFile -Encoding ASCII
 
-    try {
-        $cmdArgs = @("-s", "-k", "-X", "POST", $Url, "-H", "Content-Type: application/json", "-d", "@$tempFile")
-        $output = & curl.exe $cmdArgs
+    Write-Host "`n[Step 2: Uploading Data]" -ForegroundColor Cyan
+    $attempt = 1
+    
+    while ($true) {
+        Write-Host "Uploading ($addPixels new pixels) - Attempt $attempt..." -NoNewline
         
-        if ($LASTEXITCODE -eq 0) {
-            Set-IniValue -Path $IniPath -Key "Unuploaded" -Value "0"
+        try {
+            $cmdArgs = @("-s", "-k", "-X", "POST", $Url, "-H", "Content-Type: application/json", "-d", "@$tempFile")
+            $output = & curl.exe $cmdArgs
             
-            Write-Host "`n[SUCCESS]" -ForegroundColor Green
-            Write-Host "Uploaded       : $addPixels pixels"
-            Write-Host "New Global Total: $newPixels pixels"
-            Write-Host "New Global Dist : $(($newKm).ToString('F2')) km"
-            Write-Host "`nNOTE: Right-Click Tray Icon -> 'Reload Config' to reset your local pending counter." -ForegroundColor Yellow
-            
-            $script:LocalPending = 0
-        } else {
-            throw "Curl returned exit code $LASTEXITCODE"
-        }
-    } catch {
-        Write-Error "Upload Failed."
-        Write-Host "Details: $($_.Exception.Message)" -ForegroundColor Gray
-    } finally {
-        if (Test-Path $tempFile) { Remove-Item $tempFile }
+            if ($LASTEXITCODE -eq 0) {
+                Set-IniValue -Path $IniPath -Key "Unuploaded" -Value "0"
+                
+                Write-Host " OK" -ForegroundColor Green
+                Write-Host "`n[SUCCESS]" -ForegroundColor Green
+                Write-Host "New Global Total: $newPixels pixels"
+                Write-Host "New Global Dist : $newKmRounded km"
+                Write-Host "`nNOTE: Right-Click Tray Icon -> 'Reload Config' to reset local counter." -ForegroundColor Yellow
+                
+                $script:LocalPending = 0
+                break
+            }
+        } catch {}
+
+        Write-Host " Failed." -ForegroundColor Red
+        Write-Host "   [!] Upload failed. Retrying in 3 seconds... (Ctrl+C to cancel)" -ForegroundColor Gray
+        Start-Sleep -Seconds 3
+        $attempt++
     }
+
+    if (Test-Path $tempFile) { Remove-Item $tempFile }
     Pause
 }
 
@@ -105,24 +136,16 @@ function Pause { Read-Host "`nPress Enter to continue..." }
 
 # --- Main Loop ---
 
-# PATH DETECTION LOGIC FIXED
 if (-not $IniPath) {
-    # 1. Check Local Variable (Passed from One-Liner)
     if ($WASPath) { $IniPath = $WASPath }
-    # 2. Check Global Variable (Backup)
     elseif ($global:WASPath) { $IniPath = $global:WASPath }
-    # 3. Check Script Root (Only works if script is downloaded, not irm|iex)
     elseif ($PSScriptRoot) { $IniPath = "$PSScriptRoot\..\stats.ini" }
-    # 4. Fallback to current directory
     else { $IniPath = ".\stats.ini" }
 }
 
-# Sanity Check
 if (-not (Test-Path $IniPath)) {
     Write-Error "stats.ini not found at: $IniPath"
-    Write-Host "If you are running this manually, provide the path to stats.ini."
-    Pause
-    exit
+    Pause; exit
 }
 
 while ($true) {
@@ -130,20 +153,29 @@ while ($true) {
     Write-Host "=== WinAutoScroll Global Stats ===" -ForegroundColor Cyan
     
     $script:LocalPending = Get-IniValue -Path $IniPath -Key "Unuploaded"
-    $remote = Get-Remote-Stats
+    
+    # Calc Pending KM
+    $pendingPx = [long]$script:LocalPending
+    $pendingKm = $pendingPx * 0.000000264583
+
+    try {
+        $jsonRaw = curl.exe -s -k -X GET $Url
+        if ($LASTEXITCODE -eq 0) { $remote = $jsonRaw | ConvertFrom-Json } else { $remote = $null }
+    } catch { $remote = $null }
     
     $pColor = "Gray"
-    if ([long]$script:LocalPending -gt 0) { $pColor = "Yellow" }
+    if ($pendingPx -gt 0) { $pColor = "Yellow" }
 
     Write-Host "`n[YOUR STATS]"
-    Write-Host "Pending Upload : $script:LocalPending pixels" -ForegroundColor $pColor
+    Write-Host "Pending Pixels : $pendingPx" -ForegroundColor $pColor
+    Write-Host "Pending Distance   : $( $pendingKm.ToString('F4') ) km" -ForegroundColor $pColor
     
     Write-Host "`n[GLOBAL STATS]"
-    if ($remote) {
+    if ($remote -and $remote.PSObject.Properties['pixels']) {
         Write-Host "Total Pixels   : $($remote.pixels)"
         Write-Host "Total Distance : $([math]::Round([double]$remote.kilometres, 2)) km"
     } else {
-        Write-Host "Remote Status  : OFFLINE (Connection Blocked)" -ForegroundColor Red
+        Write-Host "Remote Status  : OFFLINE (Will retry on upload)" -ForegroundColor Red
     }
 
     Write-Host "`n[ACTIONS]"
@@ -154,7 +186,7 @@ while ($true) {
     $choice = Read-Host "`nSelect Option"
     
     switch ($choice) {
-        '1' { if ([long]$script:LocalPending -gt 0) { Upload-Data } else { Write-Warning "Nothing to upload."; Pause } }
+        '1' { if ($pendingPx -gt 0) { Upload-Data } else { Write-Warning "Nothing to upload."; Pause } }
         '2' { continue }
         '3' { exit }
     }
