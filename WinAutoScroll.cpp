@@ -610,7 +610,7 @@ void UpdateTrayIconState()
         {
             Graphics g(bmp);
             g.SetSmoothingMode(SmoothingModeAntiAlias);
-            Pen redPen(Color(255, 255, 0, 0), 2);
+            Pen redPen(Color(220, 200, 15, 30), 8);
             int w = bmp->GetWidth();
             int h = bmp->GetHeight();
             g.DrawLine(&redPen, 0, 0, w, h);
