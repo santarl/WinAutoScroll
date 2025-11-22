@@ -1,0 +1,41 @@
+name: Manual Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release Version (e.g., v1)'
+        required: true
+        default: 'v1'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    
+    steps:
+    # 1. Get the code
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # 2. Setup MSVC (cl.exe) environment
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+
+    # 3. Compile the project
+    - name: Compile WinAutoScroll
+      run: |
+        cl WinAutoScroll.cpp /MD /O2 /link /SUBSYSTEM:WINDOWS
+
+    # 4. Create Release and Upload EXE
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ inputs.version }}
+        name: Release ${{ inputs.version }}
+        files: WinAutoScroll.exe
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
