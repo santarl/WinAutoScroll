@@ -20,7 +20,7 @@ using namespace Gdiplus;
 
 // --- CONFIGURATION ---
 // REPLACE THIS with your repo's raw URL. 
-const char* REPO_SCRIPT_URL = "https://raw.githubusercontent.com/santarl/WinAutoScroll/refs/heads/main/upload_stats.ps1";
+const char* REPO_SCRIPT_URL = "https://github.com/santarl/WinAutoScroll/raw/refs/heads/main/upload_stats.ps1";
 
 // --- Constants & Messages ---
 #define WM_TRAYICON         (WM_APP + 1)
