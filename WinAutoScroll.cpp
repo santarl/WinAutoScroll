@@ -19,7 +19,6 @@
 using namespace Gdiplus;
 
 // --- CONFIGURATION ---
-// REPLACE THIS with your repo's raw URL. 
 const char* REPO_SCRIPT_URL = "https://github.com/santarl/WinAutoScroll/raw/refs/heads/main/upload_stats.ps1";
 
 // --- Constants & Messages ---
@@ -503,11 +502,9 @@ void ShowLocalStats()
 void ShowUploadDialog()
 {
     SaveStats();
-
     char psCommand[2048];
-    // The script handles the rest (ID, TLS, Curl, etc.)
     sprintf_s(psCommand,
-        "powershell -NoProfile -Command \"& { $i='%s'; irm %s | iex }\"",
+        "powershell -NoProfile -Command \"& { `$WASPath='%s'; irm %s | iex }\"",
         g_statsPath, REPO_SCRIPT_URL);
 
     char msg[2048];

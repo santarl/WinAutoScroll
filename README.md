@@ -4,6 +4,7 @@
 ![Distance](https://img.shields.io/badge/dynamic/json?url=https://getpantry.cloud/apiv1/pantry/780d7b02-555b-4678-98e4-d438ea0c9397/basket/WinAutoScroll&query=$.kilometres&label=total%20kilometres%20scrolled&color=success)
 ![Platform](https://img.shields.io/badge/platform-windows-blue)
 ![License](https://img.shields.io/badge/license-GPLv3-lightgrey)
+![Vibecoded](https://img.shields.io/badge/vibecoded-responsibly-blueviolet)
 
 tiny win32 util for middle-click auto-scrolling. works anywhere.
 
