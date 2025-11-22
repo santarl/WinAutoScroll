@@ -35,7 +35,9 @@ jobs:
       with:
         tag_name: ${{ inputs.version }}
         name: Release ${{ inputs.version }}
-        files: WinAutoScroll.exe
+        files: |
+          WinAutoScroll.exe
+          config.ini
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
