@@ -40,6 +40,7 @@ typedef enum { CURSOR_NONE, CURSOR_ALL, CURSOR_NS, CURSOR_WE, CURSOR_NWSE, CURSO
 // --- Config ---
 typedef struct {
     int min_scroll, max_scroll; float sensitivity, ramp_exponent;
+    int update_frequency; // New: Hz
     int trigger_vk_code, trigger_middle_mouse, emulate_touchpad_scrolling;
     TriggerMode trigger_mode;
     int middle_mouse_passthrough, keyboard_passthrough, drag_threshold;
@@ -49,7 +50,8 @@ typedef struct {
     float indicator_thickness; int indicator_filled;
 } AppConfig;
 
-AppConfig g_config = { 1, 1000, 0.01f, 4.0f, 0, 1, 0, MODE_HOLD, 1, 1, 40, SHAPE_CROSS, 1, 10, 1, SHAPE_CIRCLE, 25, 10, 100, 100, 100, 180, 1.5f, 0 };
+// Initialized with default 60Hz
+AppConfig g_config = { 1, 1000, 0.01f, 4.0f, 60, 0, 1, 0, MODE_HOLD, 1, 1, 40, SHAPE_CROSS, 1, 10, 1, SHAPE_CIRCLE, 25, 10, 100, 100, 100, 180, 1.5f, 0 };
 
 // --- Global State ---
 HHOOK g_hMouseHook, g_hKeyboardHook;
@@ -246,24 +248,19 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter) {
         ScrollCursorType target = CURSOR_ALL;
         if (act) {
             double angle = atan2((double)dy, (double)dx) * 180.0 / M_PI;
-            
-            // WE: Left/Right (approx 0 and 180)
-            if (fabs(angle) <= 22.5 || fabs(angle) >= 157.5) {
-                target = CURSOR_WE;
-            } 
-            // NS: Up/Down (approx 90 and -90)
-            else if (fabs(angle) >= 67.5 && fabs(angle) <= 112.5) {
-                target = CURSOR_NS;
-            }
-            // Diagonals
+            if (fabs(angle) <= 22.5 || fabs(angle) >= 157.5) target = CURSOR_WE;
+            else if (fabs(angle) >= 67.5 && fabs(angle) <= 112.5) target = CURSOR_NS;
             else {
-                // If x and y signs match, it's NWSE (\)
                 if ((dx > 0 && dy > 0) || (dx < 0 && dy < 0)) target = CURSOR_NWSE;
-                else target = CURSOR_NESW; // Signs differ, NESW (/)
+                else target = CURSOR_NESW;
             }
         }
         if (g_currentCursorType != target) SetScrollCursor(target);
-        Sleep(10);
+        
+        // Configurable Frequency (Hz -> Milliseconds)
+        int freq = g_config.update_frequency;
+        if (freq <= 0) freq = 60; // Safety fallback
+        Sleep(1000 / freq);
     }
     RestoreSystemCursors();
     g_scrollState = STATE_IDLE;
@@ -402,6 +399,7 @@ void LoadConfig(const char* filename) {
         else if (!strcmp(key, "max_scroll")) g_config.max_scroll = atoi(val);
         else if (!strcmp(key, "sensitivity")) g_config.sensitivity = (float)atof(val);
         else if (!strcmp(key, "ramp_exponent")) g_config.ramp_exponent = (float)atof(val);
+        else if (!strcmp(key, "update_frequency")) g_config.update_frequency = atoi(val);
         else if (!strcmp(key, "trigger_middle_mouse")) g_config.trigger_middle_mouse = atoi(val);
         else if (!strcmp(key, "trigger_vk_code")) g_config.trigger_vk_code = strtol(val, NULL, 0);
         else if (!strcmp(key, "emulate_touchpad_scrolling")) g_config.emulate_touchpad_scrolling = atoi(val);
@@ -438,7 +436,7 @@ void UpdateTrayIconState() {
     NOTIFYICONDATA nid = {sizeof(NOTIFYICONDATA)}; nid.hWnd = g_hMainWnd; nid.uID = 1;
     nid.uFlags = NIF_TIP | NIF_ICON;
 
-    // 1. Load the Base Mouse Icon
+    // 1. Load Base Icon
     HMODULE hShell32 = LoadLibraryEx("shell32.dll", NULL, LOAD_LIBRARY_AS_DATAFILE);
     HICON hBaseIcon = NULL;
     if (hShell32) {
@@ -447,30 +445,25 @@ void UpdateTrayIconState() {
     }
     if (!hBaseIcon) hBaseIcon = LoadIcon(NULL, IDI_APPLICATION);
 
-    // 2. Process Icon based on State
+    // 2. Process State
     if (g_isPaused) {
-        // Create GDI+ Bitmap from the base icon
+        // Draw "X" on icon
         Bitmap* bmp = Bitmap::FromHICON(hBaseIcon);
         if (bmp) {
             Graphics g(bmp);
             g.SetSmoothingMode(SmoothingModeAntiAlias);
+            Pen redPen(Color(255, 255, 0, 0), 2);
+            int w = bmp->GetWidth(); int h = bmp->GetHeight();
+            g.DrawLine(&redPen, 0, 0, w, h);
+            g.DrawLine(&redPen, 0, h, w, 0);
             
-            // Draw a Red "X"
-            Pen redPen(Color(255, 255, 0, 0), 6); // Red color, 2px thick
-            int w = bmp->GetWidth();
-            int h = bmp->GetHeight();
-            g.DrawLine(&redPen, 0, 0, w, h); // Top-Left to Bottom-Right
-            g.DrawLine(&redPen, 0, h, w, 0); // Bottom-Left to Top-Right
-
-            // Convert back to HICON
             HICON hPausedIcon = NULL;
             bmp->GetHICON(&hPausedIcon);
             delete bmp;
-            DestroyIcon(hBaseIcon); // Destroy the clean original
-            
-            nid.hIcon = hPausedIcon; // Use the crossed-out one
+            DestroyIcon(hBaseIcon);
+            nid.hIcon = hPausedIcon;
         } else {
-            nid.hIcon = hBaseIcon; // Fallback
+            nid.hIcon = hBaseIcon;
         }
         strcpy_s(nid.szTip, "WinAutoScroll - Paused");
     } else {
@@ -478,10 +471,8 @@ void UpdateTrayIconState() {
         strcpy_s(nid.szTip, "WinAutoScroll - Active");
     }
 
-    // 3. Update Tray
+    // 3. Update
     Shell_NotifyIcon(NIM_MODIFY, &nid);
-    
-    // Cleanup: The tray makes a copy of the image data, so we can destroy our local handle
     DestroyIcon(nid.hIcon); 
 }
 
