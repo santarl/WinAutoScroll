@@ -172,8 +172,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_COMMAND:
         switch (LOWORD(wParam))
         {
-        case ID_MENU_EDIT_CONFIG: ShellExecute(NULL, "edit", "config.ini", NULL, NULL, SW_SHOWNORMAL); break;
-        case ID_MENU_RELOAD: LoadConfig("config.ini"); LoadCursors(); break;
+        case ID_MENU_EDIT_CONFIG: 
+            if (GetFileAttributes("config.ini") == INVALID_FILE_ATTRIBUTES) {
+                int result = MessageBox(hWnd, 
+                    "config.ini not found!\n\n"
+                    "The configuration file is missing.\n"
+                    "Would you like to open the repository to download the default config?", 
+                    "Config Missing", 
+                    MB_YESNO | MB_ICONWARNING);
+                
+                if (result == IDYES) {
+                    ShellExecute(NULL, "open", "https://github.com/santarl/WinAutoScroll", NULL, NULL, SW_SHOWNORMAL);
+                }
+            } else {
+                ShellExecute(NULL, "edit", "config.ini", NULL, NULL, SW_SHOWNORMAL); 
+            }
+            break;
+        case ID_MENU_RELOAD: 
+            LoadConfig("config.ini"); 
+            LoadStats(); 
+            LoadCursors(); 
+            break;
         case ID_MENU_STATS: ShowLocalStats(); break;
         case ID_MENU_UPLOAD: ShowUploadDialog(); break;
         case ID_MENU_EXIT: DestroyWindow(hWnd); break;
