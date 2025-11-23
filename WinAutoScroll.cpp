@@ -61,6 +61,7 @@ typedef struct
     float indicator_thickness;
     int indicator_filled;
     int fun_stats;
+    int natural_scrolling;
 } AppConfig;
 
 typedef struct
@@ -70,8 +71,9 @@ typedef struct
     unsigned long long session_pixels;
 } Stats;
 
-AppConfig g_config = { 1, 1000, 0.01f, 4.0f, 60, 0, 1, 0, MODE_HOLD, 1, 1, 40, SHAPE_CROSS, 1, 10, 1, SHAPE_CIRCLE, 25, 10, 100, 100, 100, 180, 1.5f, 0, 1 };
+AppConfig g_config = { 1, 1000, 0.01f, 4.0f, 60, 0, 1, 0, MODE_HOLD, 1, 1, 40, SHAPE_CROSS, 1, 10, 1, SHAPE_CIRCLE, 25, 10, 100, 100, 100, 180, 1.5f, 0, 1, 0 };
 Stats g_stats = { 0 };
+
 
 // --- Global State ---
 HHOOK g_hMouseHook, g_hKeyboardHook;
@@ -374,6 +376,12 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter)
                 hS = CalculateScrollAmount(dx, g_config.emulate_touchpad_scrolling);
             }
 
+            // --- NEW: Natural Scrolling Logic ---
+            if (g_config.natural_scrolling) {
+                vS = -vS;
+                hS = -hS;
+            }
+
             if (vS != 0) SendMouseInput(MOUSEEVENTF_WHEEL, (DWORD)vS);
             if (hS != 0) SendMouseInput(MOUSEEVENTF_HWHEEL, (DWORD)hS);
 
@@ -382,10 +390,14 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter)
                 unsigned long long moved = abs(vS) + abs(hS);
                 g_stats.total_pixels += moved;
                 g_stats.session_pixels += moved;
-                if (vS > 0) g_stats.dir_up += vS;
-                if (vS < 0) g_stats.dir_down += abs(vS);
-                if (hS > 0) g_stats.dir_right += hS;
-                if (hS < 0) g_stats.dir_left += abs(hS);
+                
+                int logicalVs = g_config.natural_scrolling ? -vS : vS;
+                int logicalHs = g_config.natural_scrolling ? -hS : hS;
+
+                if (logicalVs > 0) g_stats.dir_up += logicalVs;
+                if (logicalVs < 0) g_stats.dir_down += abs(logicalVs);
+                if (logicalHs > 0) g_stats.dir_right += logicalHs;
+                if (logicalHs < 0) g_stats.dir_left += abs(logicalHs);
             }
         }
 
@@ -563,6 +575,7 @@ void LoadConfig(const char* filename)
         else if (!strcmp(key, "indicator_thickness")) g_config.indicator_thickness = (float)atof(val);
         else if (!strcmp(key, "indicator_filled")) g_config.indicator_filled = atoi(val);
         else if (!strcmp(key, "fun_stats")) g_config.fun_stats = atoi(val);
+        else if (!strcmp(key, "natural_scrolling")) g_config.natural_scrolling = atoi(val);
         else if (!strcmp(key, "trigger_mode"))
         {
             g_config.trigger_mode = (_stricmp(val, "hold") == 0) ? MODE_HOLD : MODE_TOGGLE;
