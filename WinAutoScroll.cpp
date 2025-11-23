@@ -62,6 +62,9 @@ typedef struct
     int indicator_filled;
     int fun_stats;
     int natural_scrolling;
+    int show_outline;
+    float outline_thickness;
+    int outline_color_r, outline_color_g, outline_color_b, outline_color_a;
 } AppConfig;
 
 typedef struct
@@ -71,7 +74,7 @@ typedef struct
     unsigned long long session_pixels;
 } Stats;
 
-AppConfig g_config = { 1, 1000, 0.01f, 4.0f, 60, 0, 1, 0, MODE_HOLD, 1, 1, 40, SHAPE_CROSS, 1, 10, 1, SHAPE_CIRCLE, 25, 10, 100, 100, 100, 180, 1.5f, 0, 1, 0 };
+AppConfig g_config = { 1, 1000, 0.01f, 4.0f, 60, 0, 1, 0, MODE_HOLD, 1, 1, 40, SHAPE_CROSS, 1, 10, 1, SHAPE_CIRCLE, 25, 10, 100, 100, 100, 180, 1.5f, 0, 1, 0, 1, 1.0f, 0, 0, 0, 255 };
 Stats g_stats = { 0 };
 
 
@@ -599,6 +602,12 @@ void LoadConfig(const char* filename)
         else if (!strcmp(key, "indicator_filled")) g_config.indicator_filled = atoi(val);
         else if (!strcmp(key, "fun_stats")) g_config.fun_stats = atoi(val);
         else if (!strcmp(key, "natural_scrolling")) g_config.natural_scrolling = atoi(val);
+        else if (!strcmp(key, "show_outline")) g_config.show_outline = atoi(val);
+        else if (!strcmp(key, "outline_thickness")) g_config.outline_thickness = (float)atof(val);
+        else if (!strcmp(key, "outline_color_r")) g_config.outline_color_r = atoi(val);
+        else if (!strcmp(key, "outline_color_g")) g_config.outline_color_g = atoi(val);
+        else if (!strcmp(key, "outline_color_b")) g_config.outline_color_b = atoi(val);
+        else if (!strcmp(key, "outline_color_a")) g_config.outline_color_a = atoi(val);
         else if (!strcmp(key, "trigger_mode"))
         {
             g_config.trigger_mode = (_stricmp(val, "hold") == 0) ? MODE_HOLD : MODE_TOGGLE;
@@ -733,10 +742,12 @@ void CreateOverlayWindow()
     g_hOverlayWnd = CreateWindowEx(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_TOPMOST, "ScrollOverlay", NULL, WS_POPUP, 0, 0, 0, 0, NULL, NULL, g_hInstance, NULL);
 }
 
-void RenderAndShowOverlay(POINT center)
-{
+void RenderAndShowOverlay(POINT center) {
     int s = g_config.indicator_size;
-    int w = s * 2 + 4, h = s * 2 + 4;
+    // Expand canvas slightly to accommodate outlines
+    int padding = (int)(g_config.indicator_thickness + g_config.outline_thickness + 5);
+    int w = (s + padding) * 2;
+    int h = (s + padding) * 2;
 
     HDC hdcScreen = GetDC(NULL);
     HDC hdcMem = CreateCompatibleDC(hdcScreen);
@@ -747,25 +758,59 @@ void RenderAndShowOverlay(POINT center)
     g.SetSmoothingMode(SmoothingModeAntiAlias);
     g.Clear(Color(0, 0, 0, 0));
 
+    // Main Brush/Pen
     Color c(g_config.indicator_color_a, g_config.indicator_color_r, g_config.indicator_color_g, g_config.indicator_color_b);
     SolidBrush brush(c);
     Pen pen(c, g_config.indicator_thickness);
-    int mid = w / 2;
 
-    switch (g_config.indicator_shape)
-    {
+    // Outline Pen
+    Color oc(g_config.outline_color_a, g_config.outline_color_r, g_config.outline_color_g, g_config.outline_color_b);
+    Pen outPen(oc, g_config.outline_thickness);
+
+    int mid = w / 2;
+    // Offsets for "Ring" outlines (Inner and Outer)
+    float halfThick = g_config.indicator_thickness / 2.0f;
+
+    switch (g_config.indicator_shape) {
     case SHAPE_SQUARE:
-        if (g_config.indicator_filled) g.FillRectangle(&brush, mid - s, mid - s, s * 2, s * 2);
-        else g.DrawRectangle(&pen, mid - s, mid - s, s * 2, s * 2);
+        if (g_config.indicator_filled) {
+            g.FillRectangle(&brush, mid - s, mid - s, s * 2, s * 2);
+            if (g_config.show_outline) g.DrawRectangle(&outPen, mid - s, mid - s, s * 2, s * 2);
+        } else {
+            g.DrawRectangle(&pen, mid - s, mid - s, s * 2, s * 2);
+            if (g_config.show_outline) {
+                // Outer Border
+                g.DrawRectangle(&outPen, mid - s - halfThick, mid - s - halfThick, (s * 2) + g_config.indicator_thickness, (s * 2) + g_config.indicator_thickness);
+                // Inner Border
+                g.DrawRectangle(&outPen, mid - s + halfThick, mid - s + halfThick, (s * 2) - g_config.indicator_thickness, (s * 2) - g_config.indicator_thickness);
+            }
+        }
         break;
     case SHAPE_CROSS:
+        // Cross is tricky to outline perfectly "inside and out", so we just draw the main cross 
+        // and optionally a wireframe behind it if needed, but for now standard drawing:
         g.FillRectangle(&brush, mid - s, mid - g_config.indicator_cross_thickness, s * 2, g_config.indicator_cross_thickness * 2);
         g.FillRectangle(&brush, mid - g_config.indicator_cross_thickness, mid - s, g_config.indicator_cross_thickness * 2, s * 2);
+        if (g_config.show_outline) {
+            // Draw outline rectangle bounds for the cross arms (Simple style)
+            g.DrawRectangle(&outPen, mid - s, mid - g_config.indicator_cross_thickness, s * 2, g_config.indicator_cross_thickness * 2);
+            g.DrawRectangle(&outPen, mid - g_config.indicator_cross_thickness, mid - s, g_config.indicator_cross_thickness * 2, s * 2);
+        }
         break;
     case SHAPE_CIRCLE:
     default:
-        if (g_config.indicator_filled) g.FillEllipse(&brush, mid - s, mid - s, s * 2, s * 2);
-        else g.DrawEllipse(&pen, mid - s, mid - s, s * 2, s * 2);
+        if (g_config.indicator_filled) {
+            g.FillEllipse(&brush, mid - s, mid - s, s * 2, s * 2);
+            if (g_config.show_outline) g.DrawEllipse(&outPen, mid - s, mid - s, s * 2, s * 2);
+        } else {
+            g.DrawEllipse(&pen, mid - s, mid - s, s * 2, s * 2);
+            if (g_config.show_outline) {
+                // Outer Ring
+                g.DrawEllipse(&outPen, mid - s - halfThick, mid - s - halfThick, (s * 2) + g_config.indicator_thickness, (s * 2) + g_config.indicator_thickness);
+                // Inner Ring
+                g.DrawEllipse(&outPen, mid - s + halfThick, mid - s + halfThick, (s * 2) - g_config.indicator_thickness, (s * 2) - g_config.indicator_thickness);
+            }
+        }
         break;
     }
 
