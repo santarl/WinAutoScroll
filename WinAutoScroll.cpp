@@ -172,26 +172,30 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_COMMAND:
         switch (LOWORD(wParam))
         {
-        case ID_MENU_EDIT_CONFIG: 
+        case ID_MENU_EDIT_CONFIG:
             if (GetFileAttributes("config.ini") == INVALID_FILE_ATTRIBUTES) {
-                int result = MessageBox(hWnd, 
-                    "config.ini not found!\n\n"
-                    "The configuration file is missing.\n"
-                    "Would you like to open the repository to download the default config?", 
-                    "Config Missing", 
-                    MB_YESNO | MB_ICONWARNING);
-                
-                if (result == IDYES) {
-                    ShellExecute(NULL, "open", "https://github.com/santarl/WinAutoScroll", NULL, NULL, SW_SHOWNORMAL);
+                if (MessageBox(hWnd, 
+                    "config.ini not found!\n\nOpen repository to download default config?", 
+                    "Config Missing", MB_YESNO | MB_ICONWARNING) == IDYES) {
+                    ShellExecute(NULL, "open", "https://github.com/Atef10000/WinAutoScroll", NULL, NULL, SW_SHOWNORMAL);
                 }
             } else {
-                ShellExecute(NULL, "edit", "config.ini", NULL, NULL, SW_SHOWNORMAL); 
+                ShellExecute(NULL, "edit", "config.ini", NULL, NULL, SW_SHOWNORMAL);
             }
             break;
-        case ID_MENU_RELOAD: 
-            LoadConfig("config.ini"); 
-            LoadStats(); 
-            LoadCursors(); 
+        case ID_MENU_RELOAD:
+            if (GetFileAttributes("config.ini") == INVALID_FILE_ATTRIBUTES) {
+                if (MessageBox(hWnd, 
+                    "config.ini not found!\n\nCannot reload settings.\nOpen repository to download default config?", 
+                    "Config Missing", MB_YESNO | MB_ICONWARNING) == IDYES) {
+                    ShellExecute(NULL, "open", "https://github.com/Atef10000/WinAutoScroll", NULL, NULL, SW_SHOWNORMAL);
+                }
+            } else {
+                LoadConfig("config.ini");
+                LoadStats();
+                LoadCursors();
+                MessageBox(hWnd, "Configuration Reloaded", "WinAutoScroll", MB_OK);
+            }
             break;
         case ID_MENU_STATS: ShowLocalStats(); break;
         case ID_MENU_UPLOAD: ShowUploadDialog(); break;
@@ -692,17 +696,31 @@ void ShowContextMenu()
     POINT pt;
     GetCursorPos(&pt);
     HMENU hMenu = CreatePopupMenu();
+
+    // Main Toggle
     AppendMenu(hMenu, MF_STRING, ID_MENU_PAUSE, g_isPaused ? "Resume" : "Pause");
     
+    AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+
+    // Stats Submenu
     if (g_config.fun_stats) {
-        AppendMenu(hMenu, MF_STRING, ID_MENU_STATS, "View Stats");
-        AppendMenu(hMenu, MF_STRING, ID_MENU_UPLOAD, "Upload Stats");
+        HMENU hStatsMenu = CreatePopupMenu();
+        AppendMenu(hStatsMenu, MF_STRING, ID_MENU_STATS, "View");
+        AppendMenu(hStatsMenu, MF_STRING, ID_MENU_UPLOAD, "Upload");
+        AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hStatsMenu, "Stats");
     }
+
+    // Config Submenu
+    HMENU hConfigMenu = CreatePopupMenu();
+    AppendMenu(hConfigMenu, MF_STRING, ID_MENU_EDIT_CONFIG, "Edit");
+    AppendMenu(hConfigMenu, MF_STRING, ID_MENU_RELOAD, "Reload");
+    AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hConfigMenu, "Config");
     
     AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-    AppendMenu(hMenu, MF_STRING, ID_MENU_EDIT_CONFIG, "Edit Config");
-    AppendMenu(hMenu, MF_STRING, ID_MENU_RELOAD, "Reload Config");
+    
+    // Exit
     AppendMenu(hMenu, MF_STRING, ID_MENU_EXIT, "Exit");
+
     SetForegroundWindow(g_hMainWnd);
     TrackPopupMenu(hMenu, TPM_BOTTOMALIGN | TPM_LEFTALIGN, pt.x, pt.y, 0, g_hMainWnd, NULL);
     DestroyMenu(hMenu);
