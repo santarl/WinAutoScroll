@@ -502,6 +502,7 @@ void ShowLocalStats()
 void ShowUploadDialog()
 {
     SaveStats();
+
     char psCommand[2048];
     sprintf_s(psCommand,
         "powershell -NoProfile -Command \"& { `$WASPath='%s'; irm %s | iex }\"",
@@ -509,20 +510,16 @@ void ShowUploadDialog()
 
     char msg[2048];
     sprintf_s(msg,
-        "To contribute to the Global Counter, run the dashboard script in PowerShell.\n\n"
-        "You have %llu pixels pending upload.\n\n"
-        "Copy the launch command to clipboard?",
+        "To contribute to the Global Counter:\n\n"
+        "1. Click 'Yes' to copy the upload command.\n"
+        "2. Paste it into a PowerShell window.\n\n"
+        "Pending Upload: %llu pixels\n\n"
+        "NOTE: The application will automatically restart upon successful upload.",
         g_stats.session_pixels);
 
-    if (MessageBox(g_hMainWnd, msg, "Upload Stats", MB_YESNO) == IDYES)
+    if (MessageBox(g_hMainWnd, msg, "Upload Stats", MB_YESNO | MB_ICONINFORMATION) == IDYES)
     {
         CopyToClipboard(psCommand);
-
-        if (MessageBox(g_hMainWnd, "Command Copied!\n\nDid you run it successfully?\n(Click Yes to reset your local pending counter)", "Confirm", MB_YESNO) == IDYES)
-        {
-            g_stats.session_pixels = 0;
-            SaveStats();
-        }
     }
 }
 

@@ -47,8 +47,6 @@ function Get-Remote-Stats-With-Retry {
     $attempt = 1
     while ($true) {
         Write-Host "Fetching global stats (Attempt $attempt)..." -NoNewline
-        
-        # Try curl (Primary)
         try {
             $jsonRaw = curl.exe -s -k -X GET $Url
             if ($LASTEXITCODE -eq 0 -and $jsonRaw) {
@@ -58,19 +56,47 @@ function Get-Remote-Stats-With-Retry {
                 }
             }
         } catch {}
-
-        # Try PS (Fallback)
         try {
             $r = Invoke-RestMethod -Uri $Url -Method Get -ErrorAction Stop
             Write-Host " OK" -ForegroundColor Green
             return $r
         } catch {}
-
+        
         Write-Host " Failed." -ForegroundColor Red
-        Write-Host "   [!] Connection failed. Retrying in 3 seconds... (Ctrl+C to cancel)" -ForegroundColor Gray
+        Write-Host "   [!] Retrying in 3 seconds... (Ctrl+C to cancel)" -ForegroundColor Gray
         Start-Sleep -Seconds 3
         $attempt++
     }
+}
+
+function Restart-App {
+    Write-Host "`n[Step 3: Finalizing]" -ForegroundColor Cyan
+    
+    # 1. Kill the App (Force stop prevents it from saving old stats on exit)
+    Write-Host "Stopping WinAutoScroll..." -NoNewline
+    Stop-Process -Name "WinAutoScroll" -Force -ErrorAction SilentlyContinue
+    Write-Host " OK" -ForegroundColor Green
+
+    # 2. Reset INI
+    Write-Host "Resetting local counter..." -NoNewline
+    Set-IniValue -Path $IniPath -Key "Unuploaded" -Value "0"
+    Write-Host " OK" -ForegroundColor Green
+
+    # 3. Restart App
+    $ExeDir = Split-Path $IniPath -Parent
+    $ExePath = Join-Path $ExeDir "WinAutoScroll.exe"
+    
+    if (Test-Path $ExePath) {
+        Write-Host "Restarting Application..." -NoNewline
+        Start-Process $ExePath
+        Write-Host " OK" -ForegroundColor Green
+    } else {
+        Write-Warning "`nCould not find WinAutoScroll.exe to restart automatically."
+        Write-Warning "Please start it manually."
+    }
+    
+    # Clear cached view
+    $script:LocalPending = 0
 }
 
 function Upload-Data {
@@ -109,21 +135,18 @@ function Upload-Data {
             $output = & curl.exe $cmdArgs
             
             if ($LASTEXITCODE -eq 0) {
-                Set-IniValue -Path $IniPath -Key "Unuploaded" -Value "0"
-                
                 Write-Host " OK" -ForegroundColor Green
-                Write-Host "`n[SUCCESS]" -ForegroundColor Green
-                Write-Host "New Global Total: $newPixels pixels"
-                Write-Host "New Global Dist : $newKmRounded km"
-                Write-Host "`nNOTE: Right-Click Tray Icon -> 'Reload Config' to reset local counter." -ForegroundColor Yellow
                 
-                $script:LocalPending = 0
+                # --- CALL RESTART LOGIC HERE ---
+                Restart-App
+                
+                Write-Host "`n[SUCCESS] Global Stats Updated!" -ForegroundColor Green
                 break
             }
         } catch {}
 
         Write-Host " Failed." -ForegroundColor Red
-        Write-Host "   [!] Upload failed. Retrying in 3 seconds... (Ctrl+C to cancel)" -ForegroundColor Gray
+        Write-Host "   [!] Upload failed. Retrying in 3 seconds..." -ForegroundColor Gray
         Start-Sleep -Seconds 3
         $attempt++
     }
@@ -153,8 +176,6 @@ while ($true) {
     Write-Host "=== WinAutoScroll Global Stats ===" -ForegroundColor Cyan
     
     $script:LocalPending = Get-IniValue -Path $IniPath -Key "Unuploaded"
-    
-    # Calc Pending KM
     $pendingPx = [long]$script:LocalPending
     $pendingKm = $pendingPx * 0.000000264583
 
@@ -168,7 +189,7 @@ while ($true) {
 
     Write-Host "`n[YOUR STATS]"
     Write-Host "Pending Pixels : $pendingPx" -ForegroundColor $pColor
-    Write-Host "Pending Distance   : $( $pendingKm.ToString('F4') ) km" -ForegroundColor $pColor
+    Write-Host "Pending Dist   : $( $pendingKm.ToString('F4') ) km" -ForegroundColor $pColor
     
     Write-Host "`n[GLOBAL STATS]"
     if ($remote -and $remote.PSObject.Properties['pixels']) {
