@@ -275,6 +275,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return 0;
 }
 
+void ParseHexColor(const char* hex, int* r, int* g, int* b, int* a) {
+    if (!hex) return;
+    if (*hex == '#') hex++; // Skip '#' if present
+
+    unsigned long val = strtoul(hex, NULL, 16);
+    size_t len = strlen(hex);
+
+    if (len == 6) { // Format: RRGGBB (Assume alpha = 255)
+        *r = (val >> 16) & 0xFF;
+        *g = (val >> 8) & 0xFF;
+        *b = val & 0xFF;
+        *a = 255;
+    } 
+    else if (len == 8) { // Format: RRGGBBAA
+        *r = (val >> 24) & 0xFF;
+        *g = (val >> 16) & 0xFF;
+        *b = (val >> 8) & 0xFF;
+        *a = val & 0xFF;
+    }
+}
+
 void StartScrolling()
 {
     if (g_scrollState == STATE_IDLE || g_scrollState == STATE_PRIMED)
@@ -594,20 +615,18 @@ void LoadConfig(const char* filename)
         else if (!strcmp(key, "show_indicator")) g_config.show_indicator = atoi(val);
         else if (!strcmp(key, "indicator_size")) g_config.indicator_size = atoi(val);
         else if (!strcmp(key, "indicator_cross_thickness")) g_config.indicator_cross_thickness = atoi(val);
-        else if (!strcmp(key, "indicator_color_r")) g_config.indicator_color_r = atoi(val);
-        else if (!strcmp(key, "indicator_color_g")) g_config.indicator_color_g = atoi(val);
-        else if (!strcmp(key, "indicator_color_b")) g_config.indicator_color_b = atoi(val);
-        else if (!strcmp(key, "indicator_color_a")) g_config.indicator_color_a = atoi(val);
         else if (!strcmp(key, "indicator_thickness")) g_config.indicator_thickness = (float)atof(val);
         else if (!strcmp(key, "indicator_filled")) g_config.indicator_filled = atoi(val);
         else if (!strcmp(key, "fun_stats")) g_config.fun_stats = atoi(val);
         else if (!strcmp(key, "natural_scrolling")) g_config.natural_scrolling = atoi(val);
         else if (!strcmp(key, "show_outline")) g_config.show_outline = atoi(val);
         else if (!strcmp(key, "outline_thickness")) g_config.outline_thickness = (float)atof(val);
-        else if (!strcmp(key, "outline_color_r")) g_config.outline_color_r = atoi(val);
-        else if (!strcmp(key, "outline_color_g")) g_config.outline_color_g = atoi(val);
-        else if (!strcmp(key, "outline_color_b")) g_config.outline_color_b = atoi(val);
-        else if (!strcmp(key, "outline_color_a")) g_config.outline_color_a = atoi(val);
+        else if (!strcmp(key, "indicator_color")) {
+            ParseHexColor(val, &g_config.indicator_color_r, &g_config.indicator_color_g, &g_config.indicator_color_b, &g_config.indicator_color_a);
+        }
+        else if (!strcmp(key, "outline_color")) {
+            ParseHexColor(val, &g_config.outline_color_r, &g_config.outline_color_g, &g_config.outline_color_b, &g_config.outline_color_a);
+        }
         else if (!strcmp(key, "trigger_mode"))
         {
             g_config.trigger_mode = (_stricmp(val, "hold") == 0) ? MODE_HOLD : MODE_TOGGLE;
