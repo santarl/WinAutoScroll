@@ -53,7 +53,8 @@ typedef struct
     TriggerMode trigger_mode;
     int middle_mouse_passthrough, keyboard_passthrough, drag_threshold;
     Shape dead_zone_shape;
-    int dead_zone, cross_dead_zone_thickness;
+    int dead_zone;
+    int axis_lock_threshold;
     int show_indicator;
     Shape indicator_shape;
     int indicator_size, indicator_cross_thickness;
@@ -74,7 +75,7 @@ typedef struct
     unsigned long long session_pixels;
 } Stats;
 
-AppConfig g_config = { 1, 1000, 0.01f, 4.0f, 60, 0, 1, 0, MODE_HOLD, 1, 1, 40, SHAPE_CROSS, 1, 10, 1, SHAPE_CIRCLE, 25, 10, 100, 100, 100, 180, 1.5f, 0, 1, 0, 1, 1.0f, 0, 0, 0, 255 };
+AppConfig g_config = { 1, 1000, 0.01f, 4.0f, 60, 0, 1, 0, MODE_HOLD, 1, 1, 40, SHAPE_CROSS, 1, 10, 20, SHAPE_CIRCLE, 25, 10, 100, 100, 100, 180, 1.5f, 0, 1, 0, 1, 1.0f, 0, 0, 0, 255 };
 Stats g_stats = { 0 };
 
 
@@ -384,50 +385,38 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter)
         int dx = currentPos.x - g_startScrollPos.x;
         int dy = currentPos.y - g_startScrollPos.y;
         int vS = 0, hS = 0;
+        
+        // 1. Dead Zone Check (Is the mouse far enough to scroll AT ALL?)
         bool act = false;
-
-        if (g_config.dead_zone_shape == SHAPE_SQUARE)
-        {
+        if (g_config.dead_zone_shape == SHAPE_SQUARE) {
+            // Box check
             act = (abs(dx) > g_config.dead_zone || abs(dy) > g_config.dead_zone);
-        }
-        else if (g_config.dead_zone_shape == SHAPE_CROSS)
-        {
-            act = (abs(dx) > g_config.cross_dead_zone_thickness || abs(dy) > g_config.cross_dead_zone_thickness);
-        }
-        else
-        {
+        } else {
+            // Circle and Cross both use Radial deadzone for the initial "Wake up" check
             act = (sqrt((double)dx * dx + (double)dy * dy) > g_config.dead_zone);
         }
 
         if (act)
         {
-            if (g_config.dead_zone_shape == SHAPE_CROSS)
+            // Calculate raw scroll values based on distance
+            vS = CalculateScrollAmount(dy, g_config.emulate_touchpad_scrolling);
+            hS = CalculateScrollAmount(dx, g_config.emulate_touchpad_scrolling);
+
+            // 3. Axis Locking (Global Feature)
+            if (g_config.axis_lock_threshold > 0) 
             {
-                if (abs(dx) <= g_config.cross_dead_zone_thickness)
-                {
-                    vS = -CalculateScrollAmount(dy, g_config.emulate_touchpad_scrolling);
-                }
-                else if (abs(dy) <= g_config.cross_dead_zone_thickness)
-                {
-                    hS = CalculateScrollAmount(dx, g_config.emulate_touchpad_scrolling);
-                }
-                else
-                {
-                    vS = -CalculateScrollAmount(dy, g_config.emulate_touchpad_scrolling);
-                    hS = CalculateScrollAmount(dx, g_config.emulate_touchpad_scrolling);
-                }
-            }
-            else
-            {
-                vS = -CalculateScrollAmount(dy, g_config.emulate_touchpad_scrolling);
-                hS = CalculateScrollAmount(dx, g_config.emulate_touchpad_scrolling);
+                if (abs(dx) <= g_config.axis_lock_threshold) hS = 0;
+                if (abs(dy) <= g_config.axis_lock_threshold) vS = 0;
             }
 
-            // --- NEW: Natural Scrolling Logic ---
+            // 4. Natural Scrolling
             if (g_config.natural_scrolling) {
                 vS = -vS;
                 hS = -hS;
             }
+
+            // 5. Wheel Inversion (Standard Line Scrolling needs this)
+            if (!g_config.emulate_touchpad_scrolling) vS = -vS; 
 
             if (vS != 0) SendMouseInput(MOUSEEVENTF_WHEEL, (DWORD)vS);
             if (hS != 0) SendMouseInput(MOUSEEVENTF_HWHEEL, (DWORD)hS);
@@ -438,7 +427,8 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter)
                 g_stats.total_pixels += moved;
                 g_stats.session_pixels += moved;
                 
-                int logicalVs = g_config.natural_scrolling ? -vS : vS;
+                int logicalVs = g_config.emulate_touchpad_scrolling ? -vS : vS;
+                if (g_config.natural_scrolling) logicalVs = -logicalVs;
                 int logicalHs = g_config.natural_scrolling ? -hS : hS;
 
                 if (logicalVs > 0) g_stats.dir_up += logicalVs;
@@ -448,6 +438,7 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter)
             }
         }
 
+        // --- Cursor Update Logic ---
         ScrollCursorType target = CURSOR_ALL;
         if (act)
         {
@@ -611,7 +602,7 @@ void LoadConfig(const char* filename)
         else if (!strcmp(key, "keyboard_passthrough")) g_config.keyboard_passthrough = atoi(val);
         else if (!strcmp(key, "drag_threshold")) g_config.drag_threshold = atoi(val);
         else if (!strcmp(key, "dead_zone")) g_config.dead_zone = atoi(val);
-        else if (!strcmp(key, "cross_dead_zone_thickness")) g_config.cross_dead_zone_thickness = atoi(val);
+        else if (!strcmp(key, "axis_lock_threshold")) g_config.axis_lock_threshold = atoi(val);
         else if (!strcmp(key, "show_indicator")) g_config.show_indicator = atoi(val);
         else if (!strcmp(key, "indicator_size")) g_config.indicator_size = atoi(val);
         else if (!strcmp(key, "indicator_cross_thickness")) g_config.indicator_cross_thickness = atoi(val);
@@ -634,7 +625,6 @@ void LoadConfig(const char* filename)
         else if (!strcmp(key, "dead_zone_shape"))
         {
             if (_stricmp(val, "square") == 0) g_config.dead_zone_shape = SHAPE_SQUARE;
-            else if (_stricmp(val, "cross") == 0) g_config.dead_zone_shape = SHAPE_CROSS;
             else g_config.dead_zone_shape = SHAPE_CIRCLE;
         }
         else if (!strcmp(key, "indicator_shape"))
