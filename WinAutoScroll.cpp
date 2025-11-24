@@ -79,6 +79,7 @@ typedef struct
     Shape dead_zone_shape;
     int dead_zone;
     int axis_lock_threshold;
+    int use_send_input_api;
     int show_indicator;
     Shape indicator_shape;
     int indicator_size, indicator_cross_thickness;
@@ -100,40 +101,13 @@ typedef struct
     unsigned long long session_pixels;
 } Stats;
 
-AppConfig g_config = {1,
-                      1000,
-                      0.01f,
-                      4.0f,
-                      60,
-                      0,
-                      1,
-                      0,
-                      MODE_HOLD,
-                      1,
-                      1,
-                      40,
-                      SHAPE_CROSS,
-                      1,
-                      10,
-                      20,
-                      SHAPE_CIRCLE,
-                      25,
-                      10,
-                      100,
-                      100,
-                      100,
-                      180,
-                      1.5f,
-                      0,
-                      1,
-                      0,
-                      1,
-                      1.0f,
-                      0,
-                      0,
-                      0,
-                      255};
+AppConfig g_config = {
+    1,  1000, 0.01f, 4.0f,        60,  0,   1,    0,  MODE_HOLD,
+    1,  1,    40,    SHAPE_CROSS, 1,   10,  0,    20, SHAPE_CIRCLE,
+    25, 10,   100,   100,         100, 180, 1.5f, 0,  1,
+    0,  1,    1.0f,  0,           0,   0,   255};
 Stats g_stats = {0};
+HWND g_hTargetWnd = NULL;
 
 // --- Global State ---
 HHOOK g_hMouseHook, g_hKeyboardHook;
@@ -401,12 +375,10 @@ void StartScrolling()
             GetCursorPos(&g_startScrollPos);
         else
             g_startScrollPos = g_primeStartPos;
-
+        g_hTargetWnd = WindowFromPoint(g_startScrollPos);
         g_scrollState = STATE_SCROLLING;
         SetScrollCursor(CURSOR_ALL);
-
         if (g_config.show_indicator) RenderAndShowOverlay(g_startScrollPos);
-
         HANDLE hThread = CreateThread(NULL, 0, ScrollingThread, NULL, 0, NULL);
         if (hThread) CloseHandle(hThread);
     }
@@ -490,6 +462,7 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter)
         int dy = currentPos.y - g_startScrollPos.y;
         int vS = 0, hS = 0;
 
+        // 1. Dead Zone Check
         bool act = false;
         if (g_config.dead_zone_shape == SHAPE_SQUARE)
         {
@@ -504,14 +477,15 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter)
 
         if (act)
         {
+            // 2. Calculate Raw Magnitude
             vS = CalculateScrollAmount(dy, g_config.emulate_touchpad_scrolling);
             hS = CalculateScrollAmount(dx, g_config.emulate_touchpad_scrolling);
 
+            // 3. Axis Locking
             if (g_config.axis_lock_threshold > 0)
             {
                 int adx = abs(dx);
                 int ady = abs(dy);
-
                 if (ady >= adx)
                 {
                     if (adx <= g_config.axis_lock_threshold) hS = 0;
@@ -522,17 +496,42 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter)
                 }
             }
 
+            // 4. Natural Scrolling
             if (g_config.natural_scrolling)
             {
                 vS = -vS;
                 hS = -hS;
             }
 
+            // 5. Wheel Inversion (Standard Line Scrolling needs this)
             if (!g_config.emulate_touchpad_scrolling) vS = -vS;
 
-            if (vS != 0) SendMouseInput(MOUSEEVENTF_WHEEL, (DWORD)vS);
-            if (hS != 0) SendMouseInput(MOUSEEVENTF_HWHEEL, (DWORD)hS);
+            // 6. Apply Input
+            if (g_config.use_send_input_api)
+            {
+                // Option A: Global Hardware Emulation (Follows Mouse)
+                if (vS != 0) SendMouseInput(MOUSEEVENTF_WHEEL, (DWORD)vS);
+                if (hS != 0) SendMouseInput(MOUSEEVENTF_HWHEEL, (DWORD)hS);
+            }
+            else
+            {
+                // Option B: Targeted Message (Locks to Anchor Window)
+                LPARAM lp = ((DWORD)g_startScrollPos.x & 0xFFFF) |
+                            ((DWORD)g_startScrollPos.y << 16);
 
+                if (vS != 0)
+                {
+                    WPARAM wp = MAKEWPARAM(0, (short)vS);
+                    PostMessage(g_hTargetWnd, WM_MOUSEWHEEL, wp, lp);
+                }
+                if (hS != 0)
+                {
+                    WPARAM wp = MAKEWPARAM(0, (short)hS);
+                    PostMessage(g_hTargetWnd, WM_MOUSEHWHEEL, wp, lp);
+                }
+            }
+
+            // 7. Stats
             if (g_config.fun_stats)
             {
                 unsigned long long moved = abs(vS) + abs(hS);
@@ -542,6 +541,7 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter)
                 int logicalVs = g_config.emulate_touchpad_scrolling ? -vS : vS;
                 if (g_config.natural_scrolling) logicalVs = -logicalVs;
                 int logicalHs = g_config.natural_scrolling ? -hS : hS;
+
                 if (logicalVs > 0) g_stats.dir_up += logicalVs;
                 if (logicalVs < 0) g_stats.dir_down += abs(logicalVs);
                 if (logicalHs > 0) g_stats.dir_right += logicalHs;
@@ -549,6 +549,7 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter)
             }
         }
 
+        // --- Cursor Update Logic ---
         ScrollCursorType target = CURSOR_ALL;
         if (act)
         {
@@ -572,13 +573,9 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter)
             }
 
             if (lockedVertically)
-            {
                 target = CURSOR_NS;
-            }
             else if (lockedHorizontally)
-            {
                 target = CURSOR_WE;
-            }
             else
             {
                 double angle = atan2((double)dy, (double)dx) * 180.0 / M_PI;
@@ -776,6 +773,8 @@ void LoadConfig(const char* filename)
             g_config.dead_zone = atoi(val);
         else if (!strcmp(key, "axis_lock_threshold"))
             g_config.axis_lock_threshold = atoi(val);
+        else if (!strcmp(key, "use_send_input_api"))
+            g_config.use_send_input_api = atoi(val);
         else if (!strcmp(key, "show_indicator"))
             g_config.show_indicator = atoi(val);
         else if (!strcmp(key, "indicator_size"))
