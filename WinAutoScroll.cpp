@@ -389,7 +389,7 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter)
         // 1. Dead Zone Check (Is the mouse far enough to scroll AT ALL?)
         bool act = false;
         if (g_config.dead_zone_shape == SHAPE_SQUARE) {
-            // Box check
+                        // Box check
             act = (abs(dx) > g_config.dead_zone || abs(dy) > g_config.dead_zone);
         } else {
             // Circle and Cross both use Radial deadzone for the initial "Wake up" check
@@ -428,7 +428,7 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter)
                 g_stats.session_pixels += moved;
                 
                 int logicalVs = g_config.emulate_touchpad_scrolling ? -vS : vS;
-                if (g_config.natural_scrolling) logicalVs = -logicalVs;
+                if (g_config.natural_scrolling) logicalVs = -logicalVs; 
                 int logicalHs = g_config.natural_scrolling ? -hS : hS;
 
                 if (logicalVs > 0) g_stats.dir_up += logicalVs;
@@ -442,13 +442,28 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter)
         ScrollCursorType target = CURSOR_ALL;
         if (act)
         {
-            double angle = atan2((double)dy, (double)dx) * 180.0 / M_PI;
-            if (fabs(angle) <= 22.5 || fabs(angle) >= 157.5) target = CURSOR_WE;
-            else if (fabs(angle) >= 67.5 && fabs(angle) <= 112.5) target = CURSOR_NS;
-            else
-            {
-                if ((dx > 0 && dy > 0) || (dx < 0 && dy < 0)) target = CURSOR_NWSE;
-                else target = CURSOR_NESW;
+            // Check Axis Locks first
+            bool lockX = (g_config.axis_lock_threshold > 0 && abs(dx) <= g_config.axis_lock_threshold);
+            bool lockY = (g_config.axis_lock_threshold > 0 && abs(dy) <= g_config.axis_lock_threshold);
+
+            if (lockX && !lockY) {
+                target = CURSOR_NS;
+            } 
+            else if (lockY && !lockX) {
+                target = CURSOR_WE;
+            }
+            else {
+                // Free movement (or both locked, or neither locked)
+                // Use standard angle logic
+                double angle = atan2((double)dy, (double)dx) * 180.0 / M_PI;
+                
+                if (fabs(angle) <= 22.5 || fabs(angle) >= 157.5) target = CURSOR_WE;
+                else if (fabs(angle) >= 67.5 && fabs(angle) <= 112.5) target = CURSOR_NS;
+                else
+                {
+                    if ((dx > 0 && dy > 0) || (dx < 0 && dy < 0)) target = CURSOR_NWSE;
+                    else target = CURSOR_NESW;
+                }
             }
         }
         if (g_currentCursorType != target) SetScrollCursor(target);
