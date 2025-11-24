@@ -490,43 +490,44 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter)
         int dy = currentPos.y - g_startScrollPos.y;
         int vS = 0, hS = 0;
 
-        // 1. Dead Zone Check (Is the mouse far enough to scroll AT ALL?)
         bool act = false;
         if (g_config.dead_zone_shape == SHAPE_SQUARE)
         {
-            // Box check
             act =
                 (abs(dx) > g_config.dead_zone || abs(dy) > g_config.dead_zone);
         }
         else
         {
-            // Circle and Cross both use Radial deadzone for the initial "Wake
-            // up" check
             act =
                 (sqrt((double)dx * dx + (double)dy * dy) > g_config.dead_zone);
         }
 
         if (act)
         {
-            // Calculate raw scroll values based on distance
             vS = CalculateScrollAmount(dy, g_config.emulate_touchpad_scrolling);
             hS = CalculateScrollAmount(dx, g_config.emulate_touchpad_scrolling);
 
-            // 3. Axis Locking (Global Feature)
             if (g_config.axis_lock_threshold > 0)
             {
-                if (abs(dx) <= g_config.axis_lock_threshold) hS = 0;
-                if (abs(dy) <= g_config.axis_lock_threshold) vS = 0;
+                int adx = abs(dx);
+                int ady = abs(dy);
+
+                if (ady >= adx)
+                {
+                    if (adx <= g_config.axis_lock_threshold) hS = 0;
+                }
+                else
+                {
+                    if (ady <= g_config.axis_lock_threshold) vS = 0;
+                }
             }
 
-            // 4. Natural Scrolling
             if (g_config.natural_scrolling)
             {
                 vS = -vS;
                 hS = -hS;
             }
 
-            // 5. Wheel Inversion (Standard Line Scrolling needs this)
             if (!g_config.emulate_touchpad_scrolling) vS = -vS;
 
             if (vS != 0) SendMouseInput(MOUSEEVENTF_WHEEL, (DWORD)vS);
@@ -541,7 +542,6 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter)
                 int logicalVs = g_config.emulate_touchpad_scrolling ? -vS : vS;
                 if (g_config.natural_scrolling) logicalVs = -logicalVs;
                 int logicalHs = g_config.natural_scrolling ? -hS : hS;
-
                 if (logicalVs > 0) g_stats.dir_up += logicalVs;
                 if (logicalVs < 0) g_stats.dir_down += abs(logicalVs);
                 if (logicalHs > 0) g_stats.dir_right += logicalHs;
@@ -549,30 +549,39 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter)
             }
         }
 
-        // --- Cursor Update Logic ---
         ScrollCursorType target = CURSOR_ALL;
         if (act)
         {
-            // Check Axis Locks first
-            bool lockX = (g_config.axis_lock_threshold > 0 &&
-                          abs(dx) <= g_config.axis_lock_threshold);
-            bool lockY = (g_config.axis_lock_threshold > 0 &&
-                          abs(dy) <= g_config.axis_lock_threshold);
+            bool lockedVertically = false;
+            bool lockedHorizontally = false;
 
-            if (lockX && !lockY)
+            if (g_config.axis_lock_threshold > 0)
+            {
+                int adx = abs(dx);
+                int ady = abs(dy);
+                if (ady >= adx)
+                {
+                    if (adx <= g_config.axis_lock_threshold)
+                        lockedVertically = true;
+                }
+                else
+                {
+                    if (ady <= g_config.axis_lock_threshold)
+                        lockedHorizontally = true;
+                }
+            }
+
+            if (lockedVertically)
             {
                 target = CURSOR_NS;
             }
-            else if (lockY && !lockX)
+            else if (lockedHorizontally)
             {
                 target = CURSOR_WE;
             }
             else
             {
-                // Free movement (or both locked, or neither locked)
-                // Use standard angle logic
                 double angle = atan2((double)dy, (double)dx) * 180.0 / M_PI;
-
                 if (fabs(angle) <= 22.5 || fabs(angle) >= 157.5)
                     target = CURSOR_WE;
                 else if (fabs(angle) >= 67.5 && fabs(angle) <= 112.5)
