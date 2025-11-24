@@ -1,0 +1,40 @@
+---
+Language:        Cpp
+# Start with Microsoft conventions as a base
+BasedOnStyle:    Microsoft
+
+# --- Indentation ---
+IndentWidth:     4
+TabWidth:        4
+UseTab:          Never
+AccessModifierOffset: -4
+
+# --- Braces & Newlines (Allman Style) ---
+# Puts { on a new line.
+BreakBeforeBraces: Allman
+
+# --- Compactness ---
+# Allows "if (condition) return;" on one line.
+# Essential for your LoadConfig parsing logic.
+AllowShortIfStatementsOnASingleLine: true
+AllowShortLoopsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: Inline
+
+# --- Pointers ---
+# Uses "char* str" instead of "char *str"
+PointerAlignment: Left
+
+# --- Win32 Specifics ---
+# IMPORTANT: Do NOT sort includes. 
+# Win32 API often breaks if windows.h isn't included before GDI/Shell APIs.
+SortIncludes:    false
+
+# --- Line Length ---
+# 120 is standard for modern screens. 
+# Prevents aggressive wrapping of your long MessageBox strings.
+ColumnLimit:     80
+
+# --- Spacing ---
+SpaceAfterCStyleCast: false
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeParens: ControlStatements
