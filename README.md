@@ -17,6 +17,10 @@ tiny win32 util for middle-click auto-scrolling. works anywhere.
 *   **touchpad mode:** optional smooth pixel-scrolling emulation.
 *   **community stats:** tracks scroll distance (opt-in).
 
+## 📽️Screenshots
+
+check out the [github pages page](https://santarl.github.io/WinAutoScroll) or [docs/screenshots.md](docs/screenshots.md)
+
 ## 📥 install
 
 1.  grab **`WinAutoScroll.exe`** from [releases](../../releases).
