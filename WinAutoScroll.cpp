@@ -101,11 +101,45 @@ typedef struct
     unsigned long long session_pixels;
 } Stats;
 
+// clang-format off
+// lets disable bin packing here
 AppConfig g_config = {
-    1,  1000, 0.01f, 4.0f,        60,  0,   1,    0,  MODE_HOLD,
-    1,  1,    40,    SHAPE_CROSS, 1,   10,  0,    20, SHAPE_CIRCLE,
-    25, 10,   100,   100,         100, 180, 1.5f, 0,  1,
-    0,  1,    1.0f,  0,           0,   0,   255};
+    1,
+    1000,
+    0.01f,
+    4.0f,
+    60,
+    0,
+    1,
+    0,
+    MODE_HOLD,
+    1,
+    1,
+    0,
+    SHAPE_CIRCLE,
+    1,
+    5,
+    0,
+    1,
+    SHAPE_CIRCLE,
+    26,
+    10,
+    255,
+    255,
+    255,
+    180,
+    6.0f,
+    0,
+    1,
+    0,
+    1,
+    1.0f,
+    100,
+    100,
+    100,
+    255
+};
+// clang-format on
 Stats g_stats = {0};
 HWND g_hTargetWnd = NULL;
 

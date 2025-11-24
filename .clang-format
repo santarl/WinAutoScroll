@@ -30,7 +30,6 @@ PointerAlignment: Left
 SortIncludes:    false
 
 # --- Line Length ---
-# 120 is standard for modern screens. 
 # Prevents aggressive wrapping of your long MessageBox strings.
 ColumnLimit:     80
 
