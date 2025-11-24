@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WinAutoScroll Calibration</title>
+    <style>
+        :root {
+            --bg-color: #0a0a0a;
+            --panel-bg: rgba(10, 10, 10, 0.95);
+            --accent: #00ff41;
+            --alert: #ff3366;
+            --warn: #ffcc00;
+            --border: #333;
+            --text: #ccc;
+        }
+
+        body {
+            margin: 0; padding: 0;
+            background-color: var(--bg-color);
+            font-family: 'Consolas', 'Monaco', monospace;
+            width: 1000000px; height: 1000000px; 
+            background-image: url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M100 0L0 0L0 100' fill='none' stroke='%231a1a1a' stroke-width='2'/%3E%3C/svg%3E");
+            overflow: auto; cursor: default;
+            -webkit-user-select: none; user-select: none;
+        }
+
+        /* --- INTRO SCREEN --- */
+        #intro-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(5, 5, 5, 0.98); z-index: 2000;
+            display: flex; justify-content: center; align-items: center;
+            text-align: center;
+        }
+        .intro-box {
+            width: 90%; max-width: 800px; 
+            max-height: 90vh; overflow-y: auto;
+            padding: 40px; border: 2px solid var(--accent);
+            background: #111; box-shadow: 0 0 50px rgba(0, 255, 65, 0.15);
+            scrollbar-width: thin; scrollbar-color: var(--accent) #111;
+        }
+        .intro-box::-webkit-scrollbar { width: 8px; }
+        .intro-box::-webkit-scrollbar-thumb { background: var(--accent); }
+
+        .intro-title { 
+            font-size: 2.5rem; color: #fff; margin-bottom: 20px; 
+            letter-spacing: 2px; font-weight: 800; text-transform: uppercase;
+            border-bottom: 1px dashed #444; padding-bottom: 20px;
+        }
+        .intro-text { 
+            font-size: 15px; color: #aaa; line-height: 1.6; margin-bottom: 20px; text-align: left; 
+        }
+        .intro-text strong { color: #fff; }
+        .intro-text li { margin-bottom: 8px; }
+        .highlight { color: var(--accent); font-weight: bold; }
+        .bad { color: var(--alert); font-weight: bold; }
+
+        .btn-main {
+            background: var(--accent); color: #000; border: none;
+            padding: 15px 40px; font-size: 20px; font-weight: 900; 
+            cursor: pointer; letter-spacing: 1px; transition: transform 0.1s;
+            margin-top: 20px; width: 100%; max-width: 300px;
+        }
+        .btn-main:hover { transform: scale(1.05); background: #fff; }
+
+        /* --- HUD --- */
+        #game-ui { display: none; }
+        .hud {
+            position: fixed; top: 20px; left: 20px;
+            background: var(--panel-bg); border: 1px solid var(--border);
+            padding: 15px; border-radius: 6px; z-index: 100;
+            width: 240px; box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+        }
+        .hud-title { margin: 0 0 10px 0; color: #fff; font-size: 14px; border-bottom: 1px solid #333; padding-bottom: 5px; font-weight: 800; }
+        .row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .val { font-weight: bold; color: var(--accent); }
+
+        /* --- CENTER ELEMENTS --- */
+        #viewport-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+        
+        .player {
+            position: fixed; top: 50%; left: 50%;
+            transform: translate(-50%, -50%) scale(1);
+            font-size: 40px; z-index: 50; pointer-events: none;
+            filter: drop-shadow(0 0 10px #000);
+            transition: transform 0.1s;
+        }
+        .player.eating { transform: translate(-50%, -50%) scale(2.0); }
+
+        /* Stats floating below cat */
+        .center-stats {
+            position: fixed; top: 50%; left: 50%;
+            transform: translate(-50%, 40px);
+            text-align: center;
+            pointer-events: none; z-index: 51;
+            text-shadow: 0 0 4px #000;
+        }
+        .stat-line {
+            font-size: 14px; font-weight: bold; color: #fff;
+            background: rgba(0,0,0,0.7); padding: 2px 6px;
+            border-radius: 4px; margin-bottom: 2px;
+            display: block; white-space: nowrap;
+        }
+        .stat-line.speed { color: var(--warn); font-size: 12px; }
+
+        /* Compass */
+        .compass-wrapper { position: fixed; top: 50%; left: 50%; width: 0; height: 0; z-index: 40; pointer-events: none; }
+        .compass-arm {
+            position: absolute; top: 0; left: 0; width: 0; height: 0;
+            display: flex; align-items: center; transform-origin: center;
+        }
+        .arrow-shape {
+            position: absolute; top: 50%; left: 120px; 
+            width: 0; height: 0; 
+            border-top: 15px solid transparent;
+            border-bottom: 15px solid transparent;
+            border-left: 30px solid var(--accent); 
+            transform: translateY(-50%);
+            filter: drop-shadow(0 0 5px #000);
+            transition: left 0.2s ease-out, border-left-color 0.2s;
+        }
+        .arrow-shape.hot { border-left-color: var(--alert); }
+
+        /* Fruits */
+        .fruit {
+            position: absolute; font-size: 360px;
+            transform: translate(-50%, -50%);
+            z-index: 20;
+            transition: transform 0.2s, opacity 0.2s;
+        }
+        .fruit.collected { transform: translate(-50%, -50%) scale(0); opacity: 0; }
+
+        /* Results Modal */
+        #modal-end {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.95); z-index: 3000;
+            display: none; justify-content: center; align-items: center;
+        }
+        
+        #screenshot-canvas { display: none; }
+
+    </style>
+</head>
+<body>
+
+    <!-- 1. INTRO SCREEN -->
+    <div id="intro-screen">
+        <div class="intro-box">
+            <div class="intro-title">THE PROBLEM WITH NAVIGATING LARGE DOCUMENTS</div>
+            
+            <div class="intro-text">
+                <strong>THE CONTEXT:</strong><br>
+                This canvas is <strong>1,000,000 pixels</strong> tall.<br>
+                While no website is <strong>comically this big</strong>, the physics mirror the daily frustration of navigating long content. Whether you are reading a <strong>500-page PDF contract</strong>, scrolling back to the beginning of a <strong>years-long group chat</strong>, or browsing a <strong>massive photo library</strong>, standard inputs create friction.
+            </div>
+
+            <div class="intro-text">
+                <strong>WHY STANDARD INPUTS FAIL:</strong>
+                <ul>
+                    <li><strong>Scrollbars:</strong> Mathematically imprecise. Moving the handle by just <span class="bad">1 screen pixel</span> skips over <span class="bad">thousands of pixels</span> of content. You cannot land on a specific paragraph.</li>
+                    <li><strong>Scroll Wheels:</strong> Physically exhausting. At standard settings (~100px per step), traversing this map requires <span class="bad">10,000 steps</span>. That is roughly <strong>2,000 full finger rotations</strong>. This repetitive motion is slow and can aggravate RSI or arthritis.</li>
+                    <li><strong>Touchpads:</strong> Ergonomically poor for long distances. You are forced to "clutch"—swipe, lift, reset, swipe—hundreds of times. It causes finger fatigue and makes it difficult to track moving content.</li>
+                </ul>
+            </div>
+
+            <div class="intro-text">
+                <strong>THE MISSING LINK:</strong><br>
+                Web browsers (Chrome, Edge, Firefox) actually solved this problem years ago with <strong>"Middle-Click Scrolling"</strong>. It is the gold standard for navigation.<br> 
+                <strong>However, this feature is locked inside the browser.</strong> Try middle-clicking in Discord, Spotify, Word, or File Explorer. Nothing happens. You are forced back to the scroll wheel.
+            </div>
+
+            <div class="intro-text">
+                <strong>THE SOLUTION:</strong><br>
+                <span class="highlight">WinAutoScroll</span> brings that "browser-exclusive" superpower to the entire operating system. It acts like cruise control for your screen: push the mouse far to cross huge gaps instantly, or pull it close to slow down for reading speed without repetitive physical effort.
+            </div>
+            
+            <div class="intro-text" style="border-top:1px dashed #444; padding-top:15px;">
+                <strong>CALIBRATION TEST:</strong><br>
+                Locate the <strong>10 Targets</strong> scattered across the map. <span class="highlight">STOP AND HOLD POSITION</span> on each target for 0.05s to verify your sensitivity settings.
+            </div>
+
+            <button class="btn-main" onclick="startGame()">START TEST</button>
+        </div>
+    </div>
+
+    <!-- 2. GAME UI -->
+    <div id="game-ui">
+        <div class="hud">
+            <div class="hud-row"><span>TARGETS:</span> <span class="val" id="ui-found">0 / 10</span></div>
+            <div class="hud-row"><span>TIME:</span> <span class="val" id="ui-time">00.00</span></div>
+            <div class="hud-row"><button onclick="location.reload()" style="width:100%; margin-top:10px; background:#222; color:#fff; border:1px solid #444; cursor:pointer;">Abort / Restart</button></div>
+        </div>
+
+        <div class="compass-wrapper">
+            <div class="compass-arm" id="compass" style="display:none;">
+                <div class="arrow-shape"></div>
+            </div>
+        </div>
+        
+        <div class="center-stats">
+            <div class="stat-line" id="center-dist">0 px</div>
+            <div class="stat-line speed" id="center-speed">0 px/s</div>
+        </div>
+
+        <div class="capture-ring" id="capture-ring"></div>
+    </div>
+
+    <!-- 3. END SCREEN -->
+    <div id="modal-end">
+        <div class="intro-box" style="max-width:500px;">
+            <div class="intro-title">TEST COMPLETE</div>
+            <div class="intro-text" id="res-advice" style="border: 1px solid #333; padding: 15px; background: #000;">Analyzing...</div>
+            
+            <button class="btn-main" style="background:#222; border:1px solid #fff; margin-top:10px;" onclick="downloadReport()">DOWNLOAD FLIGHT REPORT</button>
+            <button class="btn-main" onclick="location.reload()">RETRY</button>
+        </div>
+    </div>
+
+    <canvas id="viewport-canvas"></canvas>
+    <div class="player" id="player">🐱</div>
+    <div id="world"></div>
+    <canvas id="report-canvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('viewport-canvas');
+        const ctx = canvas.getContext('2d', { alpha: true });
+        const worldDiv = document.getElementById('world');
+        const captureRing = document.getElementById('capture-ring');
+        const playerEl = document.getElementById('player');
+        
+        const CENTER = 500000;
+        const TOTAL_FRUITS = 10;
+        const FRUIT_TYPES = ['🍎','🍌','🍒','🍇','🍉','🍊','🍍','🥝'];
+        const CAPTURE_TIME = 50; // 50ms Snappy
+        const HITBOX_RADIUS = 250; 
+
+        let fruits = [];
+        let collectedCount = 0;
+        let isRunning = false;
+        let startTime = 0;
+        let hoverTarget = null;
+        let hoverStartTime = 0;
+        
+        let lastX = CENTER, lastY = CENTER;
+        let points = [];
+        let actualDistance = 0;
+        let optimalDistance = 0;
+        let lastCollectPos = {x: CENTER, y: CENTER};
+        let finalTime = 0;
+        let finalOvershoot = 0;
+        let lastFrameTime = performance.now();
+        let lastFrameX = CENTER;
+        let lastFrameY = CENTER;
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        function startGame() {
+            document.getElementById('intro-screen').style.display = 'none';
+            document.getElementById('game-ui').style.display = 'block';
+            window.scrollTo(CENTER - window.innerWidth/2, CENTER - window.innerHeight/2);
+            spawnFruits();
+            setTimeout(() => {
+                const cx = window.scrollX + window.innerWidth/2;
+                const cy = window.scrollY + window.innerHeight/2;
+                lastX = cx; lastY = cy;
+                points = [{x: cx, y: cy}];
+                isRunning = true;
+                startTime = Date.now();
+                loop();
+            }, 100);
+        }
+
+        function spawnFruits() {
+            worldDiv.innerHTML = '';
+            fruits = [];
+            for(let i=0; i<TOTAL_FRUITS; i++) {
+                let range = 600000; 
+                let x = CENTER + (Math.random() * range - (range/2));
+                let y = CENTER + (Math.random() * range - (range/2));
+                const el = document.createElement('div');
+                el.className = 'fruit';
+                el.innerText = FRUIT_TYPES[Math.floor(Math.random() * FRUIT_TYPES.length)];
+                el.style.left = x + 'px';
+                el.style.top = y + 'px';
+                worldDiv.appendChild(el);
+                fruits.push({ x, y, el, collected: false });
+            }
+        }
+
+        function updateGameLogic(cx, cy) {
+            // 1. Physics & Logic
+            let hit = null;
+            let nearest = null;
+            let minD = Infinity;
+
+            fruits.forEach(f => {
+                if (f.collected) return;
+                const dist = Math.sqrt(Math.pow(f.x - cx, 2) + Math.pow(f.y - cy, 2));
+                if (dist < HITBOX_RADIUS) hit = f;
+                if (dist < minD) { minD = dist; nearest = f; }
+            });
+
+            // 2. Update Compass & Center Text
+            const arm = document.getElementById('compass');
+            const arrow = arm.querySelector('.arrow-shape');
+            const distLabel = document.getElementById('center-dist');
+            const speedLabel = document.getElementById('center-speed');
+
+            if (nearest) {
+                arm.style.display = 'flex';
+                const dx = nearest.x - cx;
+                const dy = nearest.y - cy;
+                const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                arm.style.transform = `rotate(${angle}deg)`;
+
+                if (minD < 5000) {
+                    arrow.classList.add('hot');
+                    distLabel.style.color = "var(--alert)";
+                } else {
+                    arrow.classList.remove('hot');
+                    distLabel.style.color = "#fff";
+                }
+
+                // Always Pixels
+                distLabel.innerText = Math.round(minD).toLocaleString() + " px";
+                
+                // Dynamic Arrow Distance
+                let visualMax = Math.min(window.innerWidth, window.innerHeight) * 0.35;
+                let factor = Math.min(minD / 200000, 1.0); 
+                let arrowDist = 80 + (factor * (visualMax - 80));
+                arrow.style.left = arrowDist + 'px';
+
+            } else {
+                arm.style.display = 'none';
+                distLabel.innerText = "";
+            }
+
+            // 3. Capture Logic
+            if (hit) {
+                playerEl.classList.add('eating');
+                if (hoverTarget !== hit) {
+                    hoverTarget = hit;
+                    hoverStartTime = Date.now();
+                    captureRing.classList.remove('active');
+                    void captureRing.offsetWidth; 
+                    captureRing.classList.add('active');
+                } else {
+                    if (Date.now() - hoverStartTime >= CAPTURE_TIME) {
+                        collectFruit(hit);
+                        hoverTarget = null;
+                    }
+                }
+            } else {
+                hoverTarget = null;
+                playerEl.classList.remove('eating');
+                captureRing.classList.remove('active');
+            }
+        }
+
+        function collectFruit(f) {
+            f.collected = true;
+            f.el.classList.add('collected');
+            collectedCount++;
+            document.getElementById('ui-found').innerText = `${collectedCount} / ${TOTAL_FRUITS}`;
+            const dist = Math.sqrt(Math.pow(f.x - lastCollectPos.x, 2) + Math.pow(f.y - lastCollectPos.y, 2));
+            optimalDistance += dist;
+            lastCollectPos = {x: f.x, y: f.y};
+            if(collectedCount >= TOTAL_FRUITS) endGame();
+        }
+
+        function endGame() {
+            isRunning = false;
+            finalTime = (Date.now() - startTime) / 1000;
+            const safeOptimal = optimalDistance || 1;
+            finalOvershoot = Math.max(0, ((actualDistance - safeOptimal) / safeOptimal) * 100);
+            const avgSpeed = actualDistance / finalTime;
+
+            let advice = "";
+            if (finalOvershoot > 100) advice = "High Overshoot. <span class='bad'>Decrease Sensitivity</span>.";
+            else if (finalOvershoot < 20) advice = "Perfect Control. You are ready.";
+            else advice = "Good run. Tweak <span class='highlight'>Ramp Exponent</span> for tighter turns.";
+            
+            document.getElementById('res-advice').innerHTML = `
+                <strong>RESULTS:</strong><br>
+                Time: ${finalTime.toFixed(2)}s<br>
+                Overshoot: ${finalOvershoot.toFixed(1)}%<br>
+                Avg Speed: ${Math.round(avgSpeed).toLocaleString()} px/s<br><br>
+                ${advice}`;
+            
+            document.getElementById('modal-end').style.display = 'flex';
+        }
+
+        // Screenshot Generator (Updated for PX only)
+        function downloadReport() {
+            const repCanvas = document.getElementById('report-canvas');
+            const rc = repCanvas.getContext('2d');
+            
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            points.forEach(p => {
+                if(p.x < minX) minX = p.x; if(p.x > maxX) maxX = p.x;
+                if(p.y < minY) minY = p.y; if(p.y > maxY) maxY = p.y;
+            });
+            fruits.forEach(f => {
+                if(f.x < minX) minX = f.x; if(f.x > maxX) maxX = f.x;
+                if(f.y < minY) minY = f.y; if(f.y > maxY) maxY = f.y;
+            });
+
+            const pad = 5000; minX -= pad; maxX += pad; minY -= pad; maxY += pad;
+            const width = maxX - minX; const height = maxY - minY;
+
+            repCanvas.width = 1200; repCanvas.height = 800;
+            const scale = Math.min(1200 / width, 800 / height);
+            
+            rc.fillStyle = "#111"; rc.fillRect(0, 0, 1200, 800);
+            const offsetX = (1200 - (width * scale)) / 2;
+            const offsetY = (800 - (height * scale)) / 2;
+
+            rc.beginPath(); rc.strokeStyle = "#ff0055"; rc.lineWidth = 2;
+            if (points.length > 0) {
+                rc.moveTo(offsetX + (points[0].x - minX) * scale, offsetY + (points[0].y - minY) * scale);
+                for(let i=1; i<points.length; i+=5) { 
+                    rc.lineTo(offsetX + (points[i].x - minX) * scale, offsetY + (points[i].y - minY) * scale);
+                }
+                rc.stroke();
+            }
+
+            fruits.forEach((f) => {
+                const fx = offsetX + (f.x - minX) * scale;
+                const fy = offsetY + (f.y - minY) * scale;
+                rc.fillStyle = "#00ff41"; rc.beginPath(); rc.arc(fx, fy, 4, 0, Math.PI*2); rc.fill();
+            });
+
+            rc.fillStyle = "#fff";
+            rc.font = "bold 30px Consolas";
+            rc.fillText("WinAutoScroll Flight Report", 30, 50);
+            rc.font = "20px Consolas"; rc.fillStyle = "#ccc";
+            rc.fillText(`Time: ${finalTime.toFixed(2)}s`, 30, 90);
+            rc.fillText(`Overshoot: ${finalOvershoot.toFixed(1)}%`, 30, 120);
+            rc.fillText(`Distance: ${Math.round(actualDistance).toLocaleString()} px`, 30, 150);
+
+            const link = document.createElement('a');
+            link.download = `FlightReport_${Date.now()}.png`;
+            link.href = repCanvas.toDataURL();
+            link.click();
+        }
+
+        window.addEventListener('scroll', () => {
+            if (!isRunning) return;
+            const cx = window.scrollX + window.innerWidth/2;
+            const cy = window.scrollY + window.innerHeight/2;
+            if (Math.abs(cx - lastX) > 10 || Math.abs(cy - lastY) > 10) {
+                points.push({ x: cx, y: cy });
+                actualDistance += Math.sqrt(Math.pow(cx - lastX, 2) + Math.pow(cy - lastY, 2));
+                lastX = cx; lastY = cy;
+            }
+        });
+
+        function loop() {
+            if (!isRunning) return;
+            const now = performance.now();
+            const cx = window.scrollX + window.innerWidth/2;
+            const cy = window.scrollY + window.innerHeight/2;
+            const ox = window.scrollX;
+            const oy = window.scrollY;
+
+            updateGameLogic(cx, cy);
+            
+            // Speed Calc
+            if (now - lastFrameTime > 60) {
+                const dist = Math.sqrt(Math.pow(cx - lastFrameX, 2) + Math.pow(cy - lastFrameY, 2));
+                const speed = Math.round(dist / ((now - lastFrameTime)/1000));
+                document.getElementById('center-speed').innerText = speed.toLocaleString() + " px/s";
+                document.getElementById('ui-time').innerText = ((Date.now() - startTime)/1000).toFixed(2);
+                
+                lastFrameTime = now; lastFrameX = cx; lastFrameY = cy;
+            }
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (points.length > 0) {
+                ctx.beginPath(); ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.strokeStyle = '#ff0055';
+                let start = Math.max(0, points.length - 1500);
+                ctx.moveTo(points[start].x - ox, points[start].y - oy);
+                for (let i = start + 1; i < points.length; i++) ctx.lineTo(points[i].x - ox, points[i].y - oy);
+                ctx.lineTo(cx - ox, cy - oy); ctx.stroke();
+            }
+            requestAnimationFrame(loop);
+        }
+
+        setTimeout(() => {
+            window.scrollTo(CENTER - window.innerWidth/2, CENTER - window.innerHeight/2);
+        }, 100);
+
+    </script>
+</body>
+</html>
