@@ -197,31 +197,90 @@
             flex-wrap: wrap;
         }
 
-        .video-placeholder {
-            width: 100%;
-            background: black;
-            border: 2px solid;
-            border-color: #808080 #fff #fff #808080;
-            aspect-ratio: 16/9;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #808080;
-            font-weight: bold;
-            position: relative;
-            margin-top: 8px;
-        }
-        .video-text {
-            border: 1px dashed #444;
-            padding: 20px;
-            border-radius: 4px;
-        }
-
         .fill-remaining {
             flex-grow: 1;
             display: flex;
             flex-direction: column;
             justify-content: space-between; 
+        }
+
+        /* --- MEDIA GALLERY (Retrofitted) --- */
+        .media-gallery {
+            width: 100%;
+            background: #c0c0c0;
+            margin-top: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .screen-frame {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: #000;
+            border: 2px solid;
+            /* DEFAULT: Sunken Style (Top/Left Dark, Bot/Right Light) */
+            border-color: #808080 #fff #fff #808080;
+            position: relative;
+            overflow: hidden;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* HOVER: Raised Style (Top/Left Light, Bot/Right Dark) - No Smooth Transition */
+        .screen-frame:hover {
+            border-color: #fff #808080 #808080 #fff;
+            /* Optional: Add focus outline inside */
+            outline: 1px dotted #000;
+            outline-offset: -4px;
+        }
+
+        /* Classic Yellow Tooltip */
+        .screen-frame::after {
+            content: 'Click to Fullscreen';
+            position: absolute;
+            bottom: 5px; right: 5px;
+            color: #000;
+            font-size: 11px;
+            background: #ffffe1; /* Classic Tooltip Yellow */
+            border: 1px solid #000;
+            padding: 2px 5px;
+            display: none; /* Hidden by default */
+            pointer-events: none;
+            box-shadow: 2px 2px 0 rgba(0,0,0,0.2);
+        }
+        .screen-frame:hover::after { display: block; }
+
+        .media-content {
+            width: 100%; height: 100%;
+            object-fit: contain;
+            display: none;
+        }
+        .media-content.active { display: block; }
+
+        /* Player Controls */
+        .player-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #c0c0c0;
+            padding: 2px;
+        }
+        
+        .control-btn {
+            width: 30px; height: 22px;
+            font-weight: bold; font-family: monospace;
+            padding: 0; min-width: unset;
+            line-height: 20px;
+        }
+        
+        .media-counter {
+            font-size: 12px; font-weight: bold;
+            background: white; border: 2px solid;
+            border-color: #808080 #fff #fff #808080;
+            padding: 2px 10px; width: 60px; text-align: center;
         }
 
         .mobile-only { display: none; }
@@ -234,7 +293,7 @@
 
             .header-container   { order: 1; text-align: center; flex-direction: column; align-items: center; }
             #box-description    { order: 2; }
-            .video-placeholder  { order: 3; margin-bottom: 10px; margin-top: 0; }
+            .media-gallery      { order: 3; margin-bottom: 15px; }
             #box-features       { order: 4; }
             #box-portable       { order: 5; }
             #box-compilation    { order: 6; }
@@ -262,23 +321,18 @@
                 <div class="icon-box">🖱️</div>
                 <div>
                     <h2 style="margin: 0; font-size: 20px;">WinAutoScroll</h2>
-                    <!-- Version will be loaded by JS -->
                     <p style="margin: 2px 0; color: #444;"><span id="app-version">Loading...</span></p>
                     <div class="badges">
-                        <!-- Dynamic Stats (Pantry) -->
+                        <!-- Stats -->
                         <img src="https://img.shields.io/badge/dynamic/json?url=https://getpantry.cloud/apiv1/pantry/780d7b02-555b-4678-98e4-d438ea0c9397/basket/WinAutoScroll&query=$.pixels&label=total%20pixels%20scrolled&color=red&style=for-the-badge">
                         <img src="https://img.shields.io/badge/dynamic/json?url=https://getpantry.cloud/apiv1/pantry/780d7b02-555b-4678-98e4-d438ea0c9397/basket/WinAutoScroll&query=$.kilometres&label=total%20kilometres%20scrolled&color=blueviolet&style=for-the-badge">
                         
-                        <!-- Meta Badges (Updated by JS or Fallback) -->
+                        <!-- Meta -->
                         <img id="badge-version" src="https://img.shields.io/github/v/release/santarl/WinAutoScroll?label=version&color=orange&style=for-the-badge" alt="Version">
                         <img src="https://img.shields.io/github/release-date/santarl/WinAutoScroll?label=updated&style=for-the-badge&color=yellow" alt="Last Updated">
                         
-                        <!-- Activity (Hidden if NoScript) -->
                         <img id="badge-commits" style="display:none;" alt="Commits Since">
-                        
                         <img src="https://img.shields.io/github/last-commit/santarl/WinAutoScroll?label=last%20commit&style=for-the-badge&color=green" alt="Last Commit">
-                        
-                        <!-- Static Fallback Size -->
                         <img id="badge-size" src="https://img.shields.io/badge/binary_size-~24KB-lightgrey?style=for-the-badge" alt="Size">
                         
                         <img src="https://img.shields.io/badge/platform-windows-blue?style=for-the-badge" alt="Platform">
@@ -290,13 +344,11 @@
             <!-- CONTENT ROW -->
             <div class="content-row">
                 <div class="col-left">
-                    <!-- Description -->
                     <div class="group-box" id="box-description">
                         <div class="group-label">Description</div>
                         <p style="margin-top: 5px;">A lightweight, dependency-free utility that adds universal middle-click auto-scrolling to any Windows application.</p>
                     </div>
 
-                    <!-- Features -->
                     <div class="group-box" id="box-features">
                         <div class="group-label">Features</div>
                         <ul style="margin-bottom: 0; margin-top: 5px;">
@@ -308,27 +360,32 @@
                         </ul>
                     </div>
 
-                    <!-- Portable Usage -->
                     <div class="group-box fill-remaining" id="box-portable">
                         <div class="group-label">Portable Usage</div>
                         <p style="margin-top: 5px; margin-bottom: 8px;">No installation required.<br>Just download the executable and config file to any folder and run.</p>
-                        
                         <a href="https://github.com/santarl/WinAutoScroll/releases/latest" class="btn btn-primary mobile-only">Download</a>
                     </div>
                 </div>
 
                 <div class="col-right">
-                    <!-- Video -->
-                    <div class="video-placeholder">
-                        <div class="video-text">[ VIDEO PREVIEW ]</div>
+                    
+                    <!-- MEDIA GALLERY (Dynamic) -->
+                    <div class="media-gallery" id="gallery-container">
+                        <div class="screen-frame" onclick="toggleFullscreen()">
+                            <!-- Media injected by JS -->
+                            <div style="color:#666; font-size:11px;">Loading Media...</div>
+                        </div>
+                        <div class="player-controls">
+                            <div class="btn control-btn" onclick="prevSlide()">&lt;</div>
+                            <div class="media-counter" id="slide-counter">0 / 0</div>
+                            <div class="btn control-btn" onclick="nextSlide()">&gt;</div>
+                        </div>
                     </div>
                     
-                    <!-- Tech Demo Link -->
                     <div style="text-align:center; margin-top: 5px;">
-                        <a href="game.html" class="btn" style="width:100%">Run Tech Demo / Calibrator</a>
+                        <a href="benchmark.html" class="btn" style="width:100%">Run Tech Demo / Calibrator</a>
                     </div>
 
-                    <!-- Compilation -->
                     <div class="group-box fill-remaining" id="box-compilation">
                         <div class="group-label">Compilation</div>
                         <p style="margin-top: 0; margin-bottom: 5px;">Open a <strong>Visual Studio Developer Command Prompt</strong> and run:</p>
@@ -341,15 +398,95 @@ cl WinAutoScroll.cpp /MD /O2 /link /SUBSYSTEM:WINDOWS</pre>
 
             <!-- FOOTER -->
             <div class="footer-container">
-                <a href="https://github.com/santarl/WinAutoScroll/issues" class="btn">Report Bug</a>
-                <a href="https://github.com/santarl/WinAutoScroll" class="btn">Source Code</a>
                 <a href="https://github.com/santarl/WinAutoScroll/releases/latest" class="btn btn-primary desktop-only">Download</a>
+                <a href="https://github.com/santarl/WinAutoScroll" class="btn">Source Code</a>
+                <a href="https://github.com/santarl/WinAutoScroll/issues" class="btn">Report Bug</a>
             </div>
         </div>
     </div>
 
     <script>
-        // 1. Smart Cache for GitHub Stats
+        // --- CONFIGURATION: ADD YOUR LINKS HERE ---
+        // Supports direct image links (png, jpg, gif) and mp4 video files.
+        const MEDIA_PLAYLIST = [
+            { type: 'image', url: 'https://github.com/user-attachments/assets/c46c7812-daeb-4dce-a5fc-abf49b66c2a2' },
+            { type: 'image', url: 'https://github.com/user-attachments/assets/cd5c932c-3ae5-4c0b-8364-b47404073244' },
+            { type: 'image', url: 'https://github.com/user-attachments/assets/44cc6035-3a98-4a25-8932-ec2e70ed2cf6' },
+            { type: 'image', url: 'https://github.com/user-attachments/assets/15fb9991-dd62-4c7c-a720-296aed02c3cf' },
+            { type: 'video', url: 'https://github.com/user-attachments/assets/ff5f7a78-fcf4-4f3e-97e5-77384318feb6' },
+            { type: 'video', url: 'https://github.com/user-attachments/assets/4e5a7879-0b10-40fc-9cc0-5d0d6b912552' },
+            { type: 'video', url: 'https://github.com/user-attachments/assets/937c532c-0904-40cd-a680-55c740590c19' },
+            { type: 'video', url: 'https://github.com/user-attachments/assets/c51b39d2-63eb-4b74-9c2c-a96e343a4e9e' },
+            { type: 'video', url: 'https://github.com/user-attachments/assets/a9826463-41ba-4c0c-a271-1fcb30972851' },
+            { type: 'video', url: 'https://github.com/user-attachments/assets/88c03327-fa2e-459b-a4af-105faaed1afc' },
+            // Example Video:
+            // { type: 'video', url: 'https://link-to-your-video.com/demo.mp4' } 
+        ];
+
+        // --- GALLERY LOGIC ---
+        let currentIndex = 0;
+        const screen = document.querySelector('.screen-frame');
+        const counter = document.getElementById('slide-counter');
+
+        function renderMedia() {
+            if (MEDIA_PLAYLIST.length === 0) return;
+
+            screen.innerHTML = '';
+            const item = MEDIA_PLAYLIST[currentIndex];
+            let el;
+
+            if (item.type === 'video') {
+                el = document.createElement('video');
+                el.className = 'media-content active';
+                el.src = item.url;
+                el.autoplay = true;
+                el.muted = true;
+                el.loop = true;
+                el.playsInline = true;
+            } else {
+                el = document.createElement('img');
+                el.className = 'media-content active';
+                el.src = item.url;
+            }
+            
+            screen.appendChild(el);
+            counter.innerText = `${currentIndex + 1} / ${MEDIA_PLAYLIST.length}`;
+        }
+
+        function nextSlide() {
+            if (MEDIA_PLAYLIST.length === 0) return;
+            currentIndex = (currentIndex + 1) % MEDIA_PLAYLIST.length;
+            renderMedia();
+        }
+
+        function prevSlide() {
+            if (MEDIA_PLAYLIST.length === 0) return;
+            currentIndex = (currentIndex - 1 + MEDIA_PLAYLIST.length) % MEDIA_PLAYLIST.length;
+            renderMedia();
+        }
+
+        function toggleFullscreen() {
+            const content = screen.querySelector('.media-content');
+            if (!content) return;
+            
+            if (!document.fullscreenElement) {
+                if(content.requestFullscreen) content.requestFullscreen();
+                else if(content.webkitRequestFullscreen) content.webkitRequestFullscreen();
+            } else {
+                if(document.exitFullscreen) document.exitFullscreen();
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight') nextSlide();
+            if (e.key === 'ArrowLeft') prevSlide();
+        });
+
+        // Init Gallery
+        renderMedia();
+
+
+        // --- STATS & EASTER EGG (Existing Logic) ---
         async function fetchRepoStats() {
             const CACHE_KEY = 'was_stats_cache';
             const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
@@ -358,18 +495,13 @@ cl WinAutoScroll.cpp /MD /O2 /link /SUBSYSTEM:WINDOWS</pre>
                 if (document.getElementById('app-version')) {
                     document.getElementById('app-version').innerText = version;
                 }
-                
                 if (document.getElementById('badge-version')) {
-                    document.getElementById('badge-version').src = 
-                        `https://img.shields.io/badge/version-${version}-orange?style=for-the-badge`;
+                    document.getElementById('badge-version').src = `https://img.shields.io/badge/version-${version}-orange?style=for-the-badge`;
                 }
-                
                 if (document.getElementById('badge-size')) {
                     const sizeEncoded = sizeKB.replace(" ", "%20");
-                    document.getElementById('badge-size').src = 
-                        `https://img.shields.io/badge/binary_size-${sizeEncoded}-red?style=for-the-badge`;
+                    document.getElementById('badge-size').src = `https://img.shields.io/badge/binary_size-${sizeEncoded}-red?style=for-the-badge`;
                 }
-
                 const commitsBadge = document.getElementById('badge-commits');
                 if (commitsBadge && version) {
                     commitsBadge.src = `https://img.shields.io/github/commits-since/santarl/WinAutoScroll/${version}?label=commits%20since%20release&style=for-the-badge&color=blue`;
@@ -386,45 +518,28 @@ cl WinAutoScroll.cpp /MD /O2 /link /SUBSYSTEM:WINDOWS</pre>
                         return; 
                     }
                 }
-
                 const response = await fetch('https://api.github.com/repos/santarl/WinAutoScroll/releases/latest');
                 if (!response.ok) return;
-                
                 const data = await response.json();
                 const version = data.tag_name || "v1"; 
                 const exeAsset = data.assets.find(a => a.name.endsWith('.exe'));
                 let sizeKB = "~30KB"; 
-
                 if (exeAsset) {
                     sizeKB = (exeAsset.size / 1024).toFixed(1) + " KB";
                 }
-
                 updateUI(version, sizeKB);
-
-                localStorage.setItem(CACHE_KEY, JSON.stringify({
-                    version: version,
-                    size: sizeKB,
-                    timestamp: Date.now()
-                }));
-
-            } catch (e) {
-                console.log("GitHub API Error (using static fallbacks)", e);
-            }
+                localStorage.setItem(CACHE_KEY, JSON.stringify({ version: version, size: sizeKB, timestamp: Date.now() }));
+            } catch (e) {}
         }
         fetchRepoStats();
 
-        // 2. Easter Egg Logic
-        const bgColors = [
-            '#008080', '#3B6EA5', '#000000', '#800000', '#2F4F4F', '#000080'
-        ];
+        const bgColors = ['#008080', '#3B6EA5', '#000000', '#800000', '#2F4F4F', '#000080'];
         let colorIndex = 0;
-
         const saved = localStorage.getItem('win98-bg');
         if (saved) {
             const idx = bgColors.indexOf(saved);
             if (idx > -1) colorIndex = idx;
         }
-
         document.getElementById('egg-trigger').onclick = function() {
             colorIndex = (colorIndex + 1) % bgColors.length;
             const newColor = bgColors[colorIndex];
