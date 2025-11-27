@@ -1,0 +1,97 @@
+name: Keepalive Pantry Stats
+
+on:
+  schedule:
+    # Run at 00:00 UTC on the 1st and 15th of every month
+    - cron: '0 0 1,15 * *'
+  
+  # Manual Trigger
+  workflow_dispatch:
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Robust Increment Loop
+        run: |
+          URL="https://getpantry.cloud/apiv1/pantry/780d7b02-555b-4678-98e4-d438ea0c9397/basket/WinAutoScroll"
+          
+          # --- PHASE 1: FETCH INITIAL STATE ---
+          # We try 10 times (10 minutes) to get a valid base number.
+          # If the server is down completely, we stop here.
+          
+          INITIAL_DATA=""
+          FETCH_RETRIES=10
+          i=0
+          
+          while [ $i -lt $FETCH_RETRIES ]; do
+            echo "Fetching initial state (Attempt $((i+1)))..."
+            TEMP_DATA=$(curl -s $URL)
+            
+            # Check if response is valid JSON
+            if echo "$TEMP_DATA" | jq -e . >/dev/null 2>&1; then
+               INITIAL_DATA="$TEMP_DATA"
+               echo "Initial fetch successful."
+               break
+            fi
+            
+            echo "Invalid response (Server error?). Retrying in 60 seconds..."
+            sleep 60
+            i=$((i+1))
+          done
+
+          if [ -z "$INITIAL_DATA" ]; then
+            echo "CRITICAL: Could not fetch initial data after $FETCH_RETRIES attempts. Aborting."
+            exit 1
+          fi
+
+          # --- PHASE 2: CALCULATE TARGET ---
+          
+          INITIAL_PIXELS=$(echo "$INITIAL_DATA" | jq '.pixels')
+          
+          # Calculate Target (Snapshot + 1)
+          # We calculate this ONCE so we have a fixed goalpost.
+          TARGET_PAYLOAD=$(echo "$INITIAL_DATA" | jq -c '{
+            pixels: (.pixels + 1), 
+            kilometres: (.kilometres + 0.000000264583)
+          }')
+          
+          TARGET_PIXELS=$(echo "$TARGET_PAYLOAD" | jq '.pixels')
+          
+          echo "Current Pixels: $INITIAL_PIXELS"
+          echo "Target Pixels:  $TARGET_PIXELS"
+          echo "----------------------------------------"
+
+          # --- PHASE 3: UPDATE & VERIFY LOOP ---
+          # Try to push the update until the server confirms it has the new value.
+          
+          UPDATE_RETRIES=30  # 30 minutes max for this phase
+          j=0
+
+          while [ $j -lt $UPDATE_RETRIES ]; do
+            echo "Update Attempt $((j+1))..."
+            
+            # A. Send Update
+            curl -s -X POST -H "Content-Type: application/json" -d "$TARGET_PAYLOAD" $URL > /dev/null
+            
+            # B. Verify
+            sleep 2
+            NEW_DATA=$(curl -s $URL)
+            NEW_PIXELS=$(echo "$NEW_DATA" | jq '.pixels')
+            
+            echo "Server reports: $NEW_PIXELS pixels"
+
+            # C. Compare
+            # If New >= Target, we succeeded.
+            if [ "$NEW_PIXELS" != "null" ] && [ "$NEW_PIXELS" -ge "$TARGET_PIXELS" ]; then
+               echo "SUCCESS: Database updated and verified."
+               exit 0
+            fi
+            
+            echo "Verification failed (Old value returned). Retrying in 60 seconds..."
+            sleep 60
+            j=$((j+1))
+          done
+
+          echo "FAILED: Unable to update database after $UPDATE_RETRIES attempts."
+          exit 1
