@@ -3,9 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- CACHE BUSTING -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+
     <title>WinAutoScroll</title>
     
-    <!-- 1. PRELOAD COLOR TO PREVENT FLASH -->
     <script>
         (function() {
             try {
@@ -22,196 +27,73 @@
         * { box-sizing: border-box; }
 
         body { 
-            background-color: #008080; /* Default: Classic Windows Teal */
+            background-color: #008080; 
             font-family: "MS Sans Serif", Tahoma, sans-serif; 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            min-height: 100vh; 
-            margin: 0; 
-            padding: 20px;
+            display: flex; justify-content: center; align-items: center; 
+            min-height: 100vh; margin: 0; padding: 20px;
             transition: background-color 0.3s;
         }
         
-        /* Window Frame */
         .window { 
-            width: 100%; 
-            max-width: 900px; 
-            background: #c0c0c0; 
-            border-top: 2px solid #dfdfdf;
-            border-left: 2px solid #dfdfdf;
-            border-right: 2px solid #000;
-            border-bottom: 2px solid #000;
+            width: 100%; max-width: 900px; background: #c0c0c0; 
+            border-top: 2px solid #dfdfdf; border-left: 2px solid #dfdfdf;
+            border-right: 2px solid #000; border-bottom: 2px solid #000;
             box-shadow: 4px 4px 0 rgba(0,0,0,0.2); 
-            display: flex;
-            flex-direction: column;
+            display: flex; flex-direction: column;
         }
 
-        /* Title Bar */
         .title-bar { 
-            background: linear-gradient(90deg, #000080, #1084d0); 
-            padding: 3px 2px 3px 3px; 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center; 
-            flex-shrink: 0;
-            margin: 2px;
+            background: linear-gradient(90deg, #000080, #1084d0); padding: 3px 2px 3px 3px; 
+            display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; margin: 2px;
         }
-        .title-text { 
-            color: white; 
-            font-weight: bold; 
-            font-size: 14px; 
-            margin-left: 2px; 
-            letter-spacing: 0.5px;
-        }
+        .title-text { color: white; font-weight: bold; font-size: 14px; margin-left: 2px; letter-spacing: 0.5px; }
         .btn-close { 
-            background: #c0c0c0; 
-            border-top: 1px solid #fff;
-            border-left: 1px solid #fff;
-            border-right: 1px solid #000;
-            border-bottom: 1px solid #000;
-            width: 16px; height: 14px; 
-            font-size: 10px; line-height: 11px; 
-            text-align: center; font-weight: bold; 
-            cursor: pointer; 
-            margin-right: 2px;
-            box-shadow: 1px 1px 0 #000; 
+            background: #c0c0c0; width: 16px; height: 14px; font-size: 10px; line-height: 11px; 
+            text-align: center; font-weight: bold; cursor: pointer; margin-right: 2px; 
+            box-shadow: 1px 1px 0 #000; border-top: 1px solid #fff; border-left: 1px solid #fff; border-right: 1px solid #000; border-bottom: 1px solid #000;
         }
-        .btn-close:active {
-            border-top: 1px solid #000;
-            border-left: 1px solid #000;
-            border-right: 1px solid #fff;
-            border-bottom: 1px solid #fff;
-            box-shadow: none;
-            transform: translate(1px, 1px);
-        }
+        .btn-close:active { border-width: 1px; border-color: #000 #fff #fff #000; box-shadow: none; transform: translate(1px, 1px); }
 
-        /* Layout */
-        .window-body {
-            padding: 15px;
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-
-        .header-container {
-            display: flex;
-            gap: 15px;
-            align-items: flex-start;
-            padding-bottom: 5px;
-        }
+        .window-body { padding: 15px; display: flex; flex-direction: column; gap: 15px; }
+        .header-container { display: flex; gap: 15px; align-items: flex-start; padding-bottom: 5px; }
         .icon-box { font-size: 42px; line-height: 1; }
 
-        .content-row {
-            display: flex;
-            gap: 20px;
-            align-items: stretch; 
-        }
-        
+        .content-row { display: flex; gap: 20px; align-items: stretch; }
         .col-left { flex: 1.1; display: flex; flex-direction: column; gap: 15px; min-width: 0; }
         .col-right { flex: 0.9; display: flex; flex-direction: column; gap: 15px; min-width: 0; }
 
-        /* Components */
-        .group-box { 
-            border: 2px solid; 
-            border-color: #808080 #fff #fff #808080; 
-            padding: 12px; 
-            position: relative; 
-            margin-top: 8px;
-        }
-        .group-label { 
-            position: absolute; 
-            top: -10px; left: 10px; 
-            background: #c0c0c0; 
-            padding: 0 5px; 
-        }
+        .group-box { border: 2px solid #dfdfdf; border-color: #808080 #fff #fff #808080; padding: 12px; position: relative; margin-top: 8px; }
+        .group-label { position: absolute; top: -10px; left: 10px; background: #c0c0c0; padding: 0 5px; }
 
-        /* Buttons */
         .btn { 
-            background: #c0c0c0; 
-            border-top: 1px solid #fff;
-            border-left: 1px solid #fff;
-            border-right: 2px solid #000;
-            border-bottom: 2px solid #000;
-            box-shadow: 1px 1px 0 #000;
-            padding: 6px 20px; 
-            color: black; 
-            text-decoration: none; 
-            font-size: 13px; 
-            display: inline-block; 
-            cursor: pointer; 
-            text-align: center;
-            min-width: 90px;
-            position: relative;
+            background: #c0c0c0; border-top: 1px solid #fff; border-left: 1px solid #fff; border-right: 2px solid #000; border-bottom: 2px solid #000;
+            box-shadow: 1px 1px 0 #000; padding: 6px 20px; color: black; text-decoration: none; font-size: 13px; 
+            display: inline-block; cursor: pointer; text-align: center; min-width: 90px; position: relative;
         }
-        .btn:hover::after {
-            content: '';
-            position: absolute;
-            top: 4px; left: 4px; right: 4px; bottom: 4px;
-            border: 1px dotted #000;
-            pointer-events: none;
-        }
-        .btn:active { 
-            border-top: 2px solid #000;
-            border-left: 2px solid #000;
-            border-right: 1px solid #fff;
-            border-bottom: 1px solid #fff;
-            box-shadow: none;
-            transform: translate(1px, 1px); 
-        }
+        .btn:hover::after { content: ''; position: absolute; top: 4px; left: 4px; right: 4px; bottom: 4px; border: 1px dotted #000; pointer-events: none; }
+        .btn:active { border-top: 2px solid #000; border-left: 2px solid #000; border-right: 1px solid #fff; border-bottom: 1px solid #fff; box-shadow: none; transform: translate(1px, 1px); }
         .btn:active::after { display: none; }
         .btn-primary { font-weight: bold; }
 
-        /* Badges */
-        .badges { 
-            margin-top: 8px; 
-            display: flex; 
-            flex-wrap: wrap; 
-            gap: 5px; 
-            align-items: center;
-        }
+        .badges { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
         .badges img { height: 22px; max-width: 100%; }
         
         ul { padding-left: 20px; margin: 5px 0; font-size: 12px; }
         li { margin-bottom: 4px; }
         p { margin: 0; font-size: 12px; }
+        pre { background: white; border: 2px solid #fff; border-color: #000 #fff #fff #000; padding: 8px; font-family: "Consolas", "Courier New", monospace; font-size: 11px; overflow-x: auto; margin: 5px 0 0 0; white-space: pre-wrap; word-wrap: break-word; }
 
-        pre { 
-            background: white; 
-            border: 2px solid; 
-            border-color: #000 #fff #fff #000; 
-            padding: 8px; 
-            font-family: "Consolas", "Courier New", monospace; 
-            font-size: 11px;
-            overflow-x: auto; 
-            margin: 5px 0 0 0;
-            white-space: pre-wrap; 
-            word-wrap: break-word;
-        }
+        .footer-container { display: flex; justify-content: flex-end; gap: 10px; margin-top: 5px; flex-wrap: wrap; }
+        .fill-remaining { flex-grow: 1; display: flex; flex-direction: column; justify-content: space-between; }
 
-        .footer-container {
-            display: flex;
-            justify-content: flex-end;
-            gap: 10px;
-            margin-top: 5px;
-            flex-wrap: wrap;
-        }
-
-        .fill-remaining {
-            flex-grow: 1;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between; 
-        }
-
-        /* --- MEDIA GALLERY (Retrofitted) --- */
+        /* --- MEDIA GALLERY --- */
         .media-gallery {
             width: 100%;
             background: #c0c0c0;
             margin-top: 8px;
             display: flex;
             flex-direction: column;
-            gap: 5px;
+            gap: 4px;
         }
 
         .screen-frame {
@@ -219,7 +101,6 @@
             aspect-ratio: 16/9;
             background: #000;
             border: 2px solid;
-            /* DEFAULT: Sunken Style (Top/Left Dark, Bot/Right Light) */
             border-color: #808080 #fff #fff #808080;
             position: relative;
             overflow: hidden;
@@ -229,59 +110,42 @@
             justify-content: center;
         }
 
-        /* HOVER: Raised Style (Top/Left Light, Bot/Right Dark) - No Smooth Transition */
-        .screen-frame:hover {
-            border-color: #fff #808080 #808080 #fff;
-            /* Optional: Add focus outline inside */
-            outline: 1px dotted #000;
-            outline-offset: -4px;
-        }
-
-        /* Classic Yellow Tooltip */
+        .screen-frame:hover { border-color: #fff #808080 #808080 #fff; outline: 1px dotted #000; outline-offset: -4px; }
+        
         .screen-frame::after {
-            content: 'Click to Fullscreen';
-            position: absolute;
-            bottom: 5px; right: 5px;
-            color: #000;
-            font-size: 11px;
-            background: #ffffe1; /* Classic Tooltip Yellow */
-            border: 1px solid #000;
-            padding: 2px 5px;
-            display: none; /* Hidden by default */
-            pointer-events: none;
-            box-shadow: 2px 2px 0 rgba(0,0,0,0.2);
+            content: 'Click to Fullscreen'; position: absolute; bottom: 5px; right: 5px;
+            color: #000; font-size: 11px; background: #ffffe1; border: 1px solid #000;
+            padding: 2px 5px; display: none; pointer-events: none; box-shadow: 2px 2px 0 rgba(0,0,0,0.2);
         }
         .screen-frame:hover::after { display: block; }
 
-        .media-content {
-            width: 100%; height: 100%;
-            object-fit: contain;
-            display: none;
-        }
+        .media-content { width: 100%; height: 100%; object-fit: contain; display: none; }
         .media-content.active { display: block; }
 
-        /* Player Controls */
-        .player-controls {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+        /* --- WIN98 PROGRESS BAR --- */
+        .progress-container {
+            height: 10px;
+            width: 100%;
             background: #c0c0c0;
-            padding: 2px;
+            border-top: 1px solid #808080;
+            border-left: 1px solid #808080;
+            border-right: 1px solid #fff;
+            border-bottom: 1px solid #fff;
+            position: relative;
+            padding: 1px; 
         }
-        
-        .control-btn {
-            width: 30px; height: 22px;
-            font-weight: bold; font-family: monospace;
-            padding: 0; min-width: unset;
-            line-height: 20px;
+
+        .progress-fill {
+            height: 100%;
+            background-color: #000080; /* System Blue */
+            width: 0%;
+            display: block;
+            transition: none; 
         }
-        
-        .media-counter {
-            font-size: 12px; font-weight: bold;
-            background: white; border: 2px solid;
-            border-color: #808080 #fff #fff #808080;
-            padding: 2px 10px; width: 60px; text-align: center;
-        }
+
+        .player-controls { display: flex; justify-content: space-between; align-items: center; background: #c0c0c0; padding: 2px; }
+        .control-btn { width: 30px; height: 22px; font-weight: bold; font-family: monospace; padding: 0; min-width: unset; line-height: 20px; }
+        .media-counter { font-size: 12px; font-weight: bold; background: white; border: 2px solid; border-color: #808080 #fff #fff #808080; padding: 2px 10px; width: 60px; text-align: center; }
 
         .mobile-only { display: none; }
         .desktop-only { display: inline-block; }
@@ -290,7 +154,6 @@
             .content-row { display: contents; }
             .col-left, .col-right { display: contents; }
             .window-body { display: flex; flex-direction: column; }
-
             .header-container   { order: 1; text-align: center; flex-direction: column; align-items: center; }
             #box-description    { order: 2; }
             .media-gallery      { order: 3; margin-bottom: 15px; }
@@ -298,7 +161,6 @@
             #box-portable       { order: 5; }
             #box-compilation    { order: 6; }
             .footer-container   { order: 7; justify-content: center; margin-top: 20px; flex-direction: column; }
-
             .fill-remaining { flex-grow: 0; }
             .mobile-only { display: block; margin-top: 10px; width: 100%; }
             .desktop-only { display: none !important; }
@@ -323,11 +185,9 @@
                     <h2 style="margin: 0; font-size: 20px;">WinAutoScroll</h2>
                     <p style="margin: 2px 0; color: #444;"><span id="app-version">Loading...</span></p>
                     <div class="badges">
-                        <!-- Stats -->
                         <img src="https://img.shields.io/badge/dynamic/json?url=https://getpantry.cloud/apiv1/pantry/780d7b02-555b-4678-98e4-d438ea0c9397/basket/WinAutoScroll&query=$.pixels&label=total%20pixels%20scrolled&color=red&style=for-the-badge">
                         <img src="https://img.shields.io/badge/dynamic/json?url=https://getpantry.cloud/apiv1/pantry/780d7b02-555b-4678-98e4-d438ea0c9397/basket/WinAutoScroll&query=$.kilometres&label=total%20kilometres%20scrolled&color=blueviolet&style=for-the-badge">
                         
-                        <!-- Meta -->
                         <img id="badge-version" src="https://img.shields.io/github/v/release/santarl/WinAutoScroll?label=version&color=orange&style=for-the-badge" alt="Version">
                         <img src="https://img.shields.io/github/release-date/santarl/WinAutoScroll?label=updated&style=for-the-badge&color=yellow" alt="Last Updated">
                         
@@ -344,15 +204,18 @@
             <!-- CONTENT ROW -->
             <div class="content-row">
                 <div class="col-left">
+                    <!-- Description -->
                     <div class="group-box" id="box-description">
                         <div class="group-label">Description</div>
                         <p style="margin-top: 5px;">A lightweight, dependency-free utility that adds universal middle-click auto-scrolling to any Windows application.</p>
                     </div>
 
+                    <!-- Features -->
                     <div class="group-box" id="box-features">
                         <div class="group-label">Features</div>
                         <ul style="margin-bottom: 0; margin-top: 5px;">
-                            <li><strong>Zero Idle CPU:</strong> Uses efficient OS-level event monitoring. The scrolling engine remains completely suspended until triggered.</li>
+                            <li><strong>OS-Level Hooks:</strong> Uses <code>SetWindowsHookEx</code> to sleep in memory. The scrolling engine is strictly suspended until triggered.</li>
+                            <li><strong>Ultra Efficient:</strong> &lt;30KB binary, ~1.5MB RAM, and exactly 0% CPU usage when idle.</li>
                             <li><strong>Universal:</strong> Works in Discord, Spotify, Text Editors, and everywhere, even legacy Win32 apps!</li>
                             <li><strong>Native Visuals:</strong> Smooth GDI+ overlay and dynamic cursors.</li>
                             <li><strong>Configurable:</strong> Edit sensitivity, dead-zones, colors and many more properties via <code>config.ini</code>.</li>
@@ -360,6 +223,7 @@
                         </ul>
                     </div>
 
+                    <!-- Portable Usage -->
                     <div class="group-box fill-remaining" id="box-portable">
                         <div class="group-label">Portable Usage</div>
                         <p style="margin-top: 5px; margin-bottom: 8px;">No installation required.<br>Just download the executable and config file to any folder and run.</p>
@@ -368,13 +232,19 @@
                 </div>
 
                 <div class="col-right">
-                    
-                    <!-- MEDIA GALLERY (Dynamic) -->
+                    <!-- MEDIA GALLERY -->
                     <div class="media-gallery" id="gallery-container">
+                        <!-- 1. Screen -->
                         <div class="screen-frame" onclick="toggleFullscreen()">
-                            <!-- Media injected by JS -->
                             <div style="color:#666; font-size:11px;">Loading Media...</div>
                         </div>
+                        
+                        <!-- 2. Progress Bar (Win98 Style: Intermittent Updates) -->
+                        <div class="progress-container">
+                            <div class="progress-fill" id="progress-fill"></div>
+                        </div>
+
+                        <!-- 3. Controls -->
                         <div class="player-controls">
                             <div class="btn control-btn" onclick="prevSlide()">&lt;</div>
                             <div class="media-counter" id="slide-counter">0 / 0</div>
@@ -386,6 +256,7 @@
                         <a href="game.html" class="btn" style="width:100%">Run Tech Demo / Calibrator</a>
                     </div>
 
+                    <!-- Compilation -->
                     <div class="group-box fill-remaining" id="box-compilation">
                         <div class="group-label">Compilation</div>
                         <p style="margin-top: 0; margin-bottom: 5px;">Open a <strong>Visual Studio Developer Command Prompt</strong> and run:</p>
@@ -406,34 +277,74 @@ cl WinAutoScroll.cpp /MD /O2 /link /SUBSYSTEM:WINDOWS</pre>
     </div>
 
     <script>
-        // --- CONFIGURATION: ADD YOUR LINKS HERE ---
-        // Supports direct image links (png, jpg, gif) and mp4 video files.
+        // --- CONFIGURATION ---
         const MEDIA_PLAYLIST = [
-            { type: 'image', url: 'https://github.com/user-attachments/assets/c46c7812-daeb-4dce-a5fc-abf49b66c2a2' },
-            { type: 'image', url: 'https://github.com/user-attachments/assets/cd5c932c-3ae5-4c0b-8364-b47404073244' },
-            { type: 'image', url: 'https://github.com/user-attachments/assets/44cc6035-3a98-4a25-8932-ec2e70ed2cf6' },
-            { type: 'image', url: 'https://github.com/user-attachments/assets/15fb9991-dd62-4c7c-a720-296aed02c3cf' },
+            { type: 'video', url: 'https://github.com/user-attachments/assets/a9826463-41ba-4c0c-a271-1fcb30972851' },
             { type: 'video', url: 'https://github.com/user-attachments/assets/ff5f7a78-fcf4-4f3e-97e5-77384318feb6' },
             { type: 'video', url: 'https://github.com/user-attachments/assets/4e5a7879-0b10-40fc-9cc0-5d0d6b912552' },
             { type: 'video', url: 'https://github.com/user-attachments/assets/937c532c-0904-40cd-a680-55c740590c19' },
             { type: 'video', url: 'https://github.com/user-attachments/assets/c51b39d2-63eb-4b74-9c2c-a96e343a4e9e' },
-            { type: 'video', url: 'https://github.com/user-attachments/assets/a9826463-41ba-4c0c-a271-1fcb30972851' },
             { type: 'video', url: 'https://github.com/user-attachments/assets/88c03327-fa2e-459b-a4af-105faaed1afc' },
-            // Example Video:
-            // { type: 'video', url: 'https://link-to-your-video.com/demo.mp4' } 
+            { type: 'image', url: 'https://github.com/user-attachments/assets/c46c7812-daeb-4dce-a5fc-abf49b66c2a2' },
+            { type: 'image', url: 'https://github.com/user-attachments/assets/cd5c932c-3ae5-4c0b-8364-b47404073244' },
+            { type: 'image', url: 'https://github.com/user-attachments/assets/44cc6035-3a98-4a25-8932-ec2e70ed2cf6' },
+            { type: 'image', url: 'https://github.com/user-attachments/assets/15fb9991-dd62-4c7c-a720-296aed02c3cf' }
         ];
 
-        // --- GALLERY LOGIC ---
+        const IMAGE_DURATION = 5000; 
+
+        // --- GALLERY & PROGRESS LOGIC ---
         let currentIndex = 0;
+        let slideTimer = null;
+        let progressTimer = null;
+        
         const screen = document.querySelector('.screen-frame');
         const counter = document.getElementById('slide-counter');
+        const progressFill = document.getElementById('progress-fill');
+
+        function resetProgress() {
+            clearInterval(progressTimer);
+            clearTimeout(slideTimer);
+            progressFill.style.width = '0%';
+            progressFill.style.transition = 'none';
+        }
+
+        function runStutterProgress(duration) {
+            const endTime = Date.now() + duration;
+            
+            function step() {
+                const now = Date.now();
+                if (now >= endTime) {
+                    progressFill.style.width = '100%';
+                    slideTimer = setTimeout(nextSlide, 200);
+                    return;
+                }
+
+                const remaining = endTime - now;
+                const elapsed = duration - remaining;
+                const pct = (elapsed / duration) * 100;
+                
+                progressFill.style.width = pct + '%';
+
+                // Erratic steps: Random 50ms to 600ms delay
+                const nextDelay = Math.random() > 0.7 ? (150 + Math.random() * 250) : 30;
+                progressTimer = setTimeout(step, nextDelay);
+            }
+            step();
+        }
 
         function renderMedia() {
             if (MEDIA_PLAYLIST.length === 0) return;
+            resetProgress();
 
             screen.innerHTML = '';
             const item = MEDIA_PLAYLIST[currentIndex];
             let el;
+
+            // Brief delay for CSS reset
+            requestAnimationFrame(() => {
+                progressFill.style.transition = 'width 0.1s linear';
+            });
 
             if (item.type === 'video') {
                 el = document.createElement('video');
@@ -441,12 +352,24 @@ cl WinAutoScroll.cpp /MD /O2 /link /SUBSYSTEM:WINDOWS</pre>
                 el.src = item.url;
                 el.autoplay = true;
                 el.muted = true;
-                el.loop = true;
-                el.playsInline = true;
+                el.loop = false; 
+                el.playsInline = true; 
+                
+                // Video Progress (Native stepper)
+                el.ontimeupdate = () => {
+                    if (el.duration) {
+                        const pct = (el.currentTime / el.duration) * 100;
+                        progressFill.style.width = pct + '%';
+                    }
+                };
+                el.onended = nextSlide; 
             } else {
                 el = document.createElement('img');
                 el.className = 'media-content active';
                 el.src = item.url;
+                
+                // Image Progress (Erratic)
+                runStutterProgress(IMAGE_DURATION);
             }
             
             screen.appendChild(el);
@@ -482,11 +405,10 @@ cl WinAutoScroll.cpp /MD /O2 /link /SUBSYSTEM:WINDOWS</pre>
             if (e.key === 'ArrowLeft') prevSlide();
         });
 
-        // Init Gallery
         renderMedia();
 
 
-        // --- STATS & EASTER EGG (Existing Logic) ---
+        // --- STATS & EASTER EGG ---
         async function fetchRepoStats() {
             const CACHE_KEY = 'was_stats_cache';
             const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
