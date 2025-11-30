@@ -240,7 +240,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     switch (msg)
     {
     case WM_TRAYICON:
-        if (lParam == WM_RBUTTONUP) ShowContextMenu();
+        if (lParam == WM_RBUTTONUP)
+        {
+            ShowContextMenu();
+        }
+        else if (lParam == WM_MBUTTONUP)
+        {
+            // Middle-Click on Tray to Toggle Pause
+            g_isPaused = !g_isPaused;
+            if (g_isPaused) StopScrolling();
+            UpdateTrayIconState();
+        }
         break;
     case WM_COMMAND:
         switch (LOWORD(wParam))
