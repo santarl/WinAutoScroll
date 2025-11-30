@@ -1,12 +1,15 @@
 name: Manual Release
 
 on:
+  push:
+    tags:
+      - 'v[0-9]+'
   workflow_dispatch:
     inputs:
       version:
         description: 'Release Version (e.g., v1)'
         required: true
-        default: 'v1'
+        default: 'v?'
 
 permissions:
   contents: write
