@@ -92,6 +92,7 @@ typedef struct
     int show_outline;
     float outline_thickness;
     int outline_color_r, outline_color_g, outline_color_b, outline_color_a;
+    int disable_cursor_changes;
 } AppConfig;
 
 typedef struct
@@ -137,7 +138,8 @@ AppConfig g_config = {
     100,
     100,
     100,
-    255
+    255,
+    0
 };
 // clang-format on
 Stats g_stats = {0};
@@ -594,49 +596,52 @@ DWORD WINAPI ScrollingThread(LPVOID lpParameter)
         }
 
         // --- Cursor Update Logic ---
-        ScrollCursorType target = CURSOR_ALL;
-        if (act)
+        if (!g_config.disable_cursor_changes)
         {
-            bool lockedVertically = false;
-            bool lockedHorizontally = false;
-
-            if (g_config.axis_lock_threshold > 0)
+            ScrollCursorType target = CURSOR_ALL;
+            if (act)
             {
-                int adx = abs(dx);
-                int ady = abs(dy);
-                if (ady >= adx)
-                {
-                    if (adx <= g_config.axis_lock_threshold)
-                        lockedVertically = true;
-                }
-                else
-                {
-                    if (ady <= g_config.axis_lock_threshold)
-                        lockedHorizontally = true;
-                }
-            }
+                bool lockedVertically = false;
+                bool lockedHorizontally = false;
 
-            if (lockedVertically)
-                target = CURSOR_NS;
-            else if (lockedHorizontally)
-                target = CURSOR_WE;
-            else
-            {
-                double angle = atan2((double)dy, (double)dx) * 180.0 / M_PI;
-                if (fabs(angle) <= 22.5 || fabs(angle) >= 157.5)
-                    target = CURSOR_WE;
-                else if (fabs(angle) >= 67.5 && fabs(angle) <= 112.5)
-                    target = CURSOR_NS;
-                else
+                if (g_config.axis_lock_threshold > 0)
                 {
-                    if ((dx > 0 && dy > 0) || (dx < 0 && dy < 0))
-                        target = CURSOR_NWSE;
+                    int adx = abs(dx);
+                    int ady = abs(dy);
+                    if (ady >= adx)
+                    {
+                        if (adx <= g_config.axis_lock_threshold)
+                            lockedVertically = true;
+                    }
                     else
-                        target = CURSOR_NESW;
+                    {
+                        if (ady <= g_config.axis_lock_threshold)
+                            lockedHorizontally = true;
+                    }
+                }
+
+                if (lockedVertically)
+                    target = CURSOR_NS;
+                else if (lockedHorizontally)
+                    target = CURSOR_WE;
+                else
+                {
+                    double angle = atan2((double)dy, (double)dx) * 180.0 / M_PI;
+                    if (fabs(angle) <= 22.5 || fabs(angle) >= 157.5)
+                        target = CURSOR_WE;
+                    else if (fabs(angle) >= 67.5 && fabs(angle) <= 112.5)
+                        target = CURSOR_NS;
+                    else
+                    {
+                        if ((dx > 0 && dy > 0) || (dx < 0 && dy < 0))
+                            target = CURSOR_NWSE;
+                        else
+                            target = CURSOR_NESW;
+                    }
                 }
             }
+            if (g_currentCursorType != target) SetScrollCursor(target);
         }
-        if (g_currentCursorType != target) SetScrollCursor(target);
 
         int freq = g_config.update_frequency;
         if (freq <= 0) freq = 60;
@@ -869,6 +874,10 @@ void LoadConfig(const char* filename)
                 g_config.indicator_shape = SHAPE_CROSS;
             else
                 g_config.indicator_shape = SHAPE_CIRCLE;
+        }
+        else if (!strcmp(key, "disable_cursor_changes"))
+        {
+            g_config.disable_cursor_changes = atoi(val);
         }
     }
     fclose(file);
@@ -1132,6 +1141,8 @@ HCURSOR LoadDynamicCursor(const char* file)
 
 void LoadCursors()
 {
+    if (g_config.disable_cursor_changes) return;
+
     g_hCursorAll = LoadCursor(NULL, IDC_SIZEALL);
     g_hCursorNS = LoadDynamicCursor("%SystemRoot%\\Cursors\\lns.cur");
     g_hCursorWE = LoadDynamicCursor("%SystemRoot%\\Cursors\\lwe.cur");
@@ -1145,6 +1156,7 @@ void LoadCursors()
 
 void SetScrollCursor(ScrollCursorType t)
 {
+    if (g_config.disable_cursor_changes) return;
     if (t == g_currentCursorType) return;
     HCURSOR target = g_hCursorAll;
     switch (t)
