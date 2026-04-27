@@ -191,6 +191,23 @@ char* Trim(char*);
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                    LPSTR lpCmdLine, int nCmdShow)
 {
+    HANDLE hMutex = CreateMutex(NULL, TRUE, "WinAutoScroll_SingleInstance_Mutex");
+    if (GetLastError() == ERROR_ALREADY_EXISTS)
+    {
+        HWND hWnd = FindWindowEx(HWND_MESSAGE, NULL, "ScrollAppHidden", "WinAutoScroll");
+        if (hWnd)
+        {
+            PostMessage(hWnd, WM_COMMAND, ID_MENU_RELOAD, 0);
+        }
+        else
+        {
+            MessageBox(NULL, "WinAutoScroll is already running.", "WinAutoScroll",
+                       MB_OK | MB_ICONINFORMATION);
+        }
+        if (hMutex) CloseHandle(hMutex);
+        return 0;
+    }
+
     SetProcessDPIAware();
     g_hInstance = hInstance;
 
@@ -1142,6 +1159,11 @@ HCURSOR LoadDynamicCursor(const char* file)
 void LoadCursors()
 {
     if (g_config.disable_cursor_changes) return;
+
+    if (g_hCursorNS) DestroyCursor(g_hCursorNS);
+    if (g_hCursorWE) DestroyCursor(g_hCursorWE);
+    if (g_hCursorNWSE) DestroyCursor(g_hCursorNWSE);
+    if (g_hCursorNESW) DestroyCursor(g_hCursorNESW);
 
     g_hCursorAll = LoadCursor(NULL, IDC_SIZEALL);
     g_hCursorNS = LoadDynamicCursor("%SystemRoot%\\Cursors\\lns.cur");
