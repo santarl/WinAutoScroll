@@ -674,9 +674,9 @@ int CalculateScrollAmount(int delta, BOOL isTouchpad)
 {
     if (delta == 0) return 0;
     double val = pow(abs(delta) * g_config.sensitivity, g_config.ramp_exponent);
+    if (val > g_config.max_scroll) val = (double)g_config.max_scroll;
     int res = (int)val;
     if (res < g_config.min_scroll) res = g_config.min_scroll;
-    if (val > g_config.max_scroll) val = (double)g_config.max_scroll;
     return (delta < 0 ? -res : res);
 }
 
