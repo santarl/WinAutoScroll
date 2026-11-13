@@ -47,6 +47,7 @@ install: $(BUILD)/wlautoscroll
 	install -Dm644 dist/wlautoscroll.conf $(DESTDIR)$(PREFIX)/lib/modules-load.d/wlautoscroll.conf
 	install -Dm644 dist/wlautoscroll.service $(DESTDIR)$(PREFIX)/lib/systemd/user/wlautoscroll.service
 	install -Dm644 ../config.ini $(DESTDIR)$(PREFIX)/share/doc/wlautoscroll/config.ini
+	install -Dm644 README.md $(DESTDIR)$(PREFIX)/share/doc/wlautoscroll/README.md
 
 .PHONY: clean
 clean:

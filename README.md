@@ -29,6 +29,11 @@ check out the [github pages page](https://santarl.github.io/WinAutoScroll) or [d
 
 no install or admin rights needed.
 
+### 🐧 linux (wayland)
+
+a port lives in [`linux/`](linux/) and reads the same `config.ini`.
+on arch: `yay -S wlautoscroll`. details in [linux/README.md](linux/README.md).
+
 ## ⚙️ config
 
 auto-generates `config.ini` on first run. edit via **tray icon > edit config**.
