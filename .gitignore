@@ -42,3 +42,7 @@
 stats.ini
 monitor.ps1
 stats copy.ini
+
+# linux port
+linux/build/
+linux/*.pkg.tar.zst
