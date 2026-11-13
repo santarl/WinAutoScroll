@@ -8,6 +8,7 @@
 #include "../src/config.h"
 #include "../src/core.h"
 #include "../src/keymap.h"
+#include "../src/input.h"
 
 #ifndef TOP_CONFIG
 #define TOP_CONFIG "../config.ini"
@@ -299,6 +300,107 @@ static void test_keymap(void)
 	CHECK(keymap_vk_to_keys(0x07, k) == 0); /* undefined VK */
 }
 
+static struct input_event E(int type, int code, int value)
+{
+	return (struct input_event){.type = type, .code = code, .value = value};
+}
+#define SYN E(EV_SYN, SYN_REPORT, 0)
+
+/* Like OPS, but the passthrough click really goes through the input layer. */
+static void i_middle(void *ud, int v) { r_middle(ud, v); input_emit_middle(v); }
+static const core_ops_t IOPS = {i_middle, r_scroll, r_begin, r_end};
+static void isetup(core_t *c, config_t *cfg, rec_t *r, const char *ini)
+{
+	memset(r, 0, sizeof *r);
+	config_load_string(cfg, ini);
+	core_init(c, cfg, &IOPS, r);
+}
+
+static void test_input(void)
+{
+	core_t c; config_t cfg; rec_t r;
+	isetup(&c, &cfg, &r, "");
+	input_bind(&c, &cfg);
+
+	input_dev_t d;
+	memset(&d, 0, sizeof d);
+	d.fd = d.clone_fd = -1;
+	d.pointer = d.grab = true;
+	d.state = DEV_ACTIVE;
+	struct input_event out[32];
+	int n;
+
+	/* Idle: everything is forwarded untouched, SYN included. */
+	struct input_event a[] = {E(EV_REL, REL_X, 5), E(EV_REL, REL_Y, 3), SYN};
+	n = input_process(&d, a, 3, out);
+	CHECK(n == 3 && out[0].code == REL_X && out[2].type == EV_SYN);
+
+	/* Middle press is swallowed, and so is its (now empty) frame. */
+	struct input_event b[] = {E(EV_KEY, BTN_MIDDLE, 1), SYN};
+	n = input_process(&d, b, 2, out);
+	CHECK(n == 0 && c.state == ST_PRIMED);
+
+	/* Left button still passes while primed. */
+	struct input_event l[] = {E(EV_KEY, BTN_LEFT, 1), SYN};
+	n = input_process(&d, l, 2, out);
+	CHECK(n == 2);
+
+	/* Motion starts the scroll and (frozen pointer) is swallowed. */
+	struct input_event m[] = {E(EV_REL, REL_X, 4), E(EV_REL, REL_Y, 9), SYN};
+	n = input_process(&d, m, 3, out);
+	CHECK(n == 0 && c.state == ST_SCROLLING && r.begins == 1);
+
+	/* Real wheel events pass through while scrolling. */
+	struct input_event w[] = {E(EV_REL, REL_WHEEL, 1), SYN};
+	n = input_process(&d, w, 2, out);
+	CHECK(n == 2);
+
+	/* A frame mixing swallowed motion and a forwarded event keeps the latter. */
+	struct input_event mix[] = {E(EV_REL, REL_X, 1), E(EV_REL, REL_HWHEEL, 1), SYN};
+	n = input_process(&d, mix, 3, out);
+	CHECK(n == 2 && out[0].code == REL_HWHEEL);
+
+	struct input_event u[] = {E(EV_KEY, BTN_MIDDLE, 0), SYN};
+	n = input_process(&d, u, 2, out);
+	CHECK(n == 0 && r.ends == 1 && c.state == ST_IDLE);
+
+	/* Click: press+release in one batch re-emerges as press, SYN, release, SYN
+	 * and in order with the surrounding motion. */
+	isetup(&c, &cfg, &r, "");
+	struct input_event click[] = {E(EV_REL, REL_X, 1), SYN, E(EV_KEY, BTN_MIDDLE, 1), SYN,
+				      E(EV_KEY, BTN_MIDDLE, 0), SYN, E(EV_REL, REL_Y, 1), SYN};
+	n = input_process(&d, click, 8, out);
+	CHECK(n == 8);
+	CHECK(out[2].code == BTN_MIDDLE && out[2].value == 1);
+	CHECK(out[4].code == BTN_MIDDLE && out[4].value == 0);
+	CHECK(out[6].code == REL_Y);
+
+	/* SYN_DROPPED: events until the next SYN_REPORT are discarded. */
+	isetup(&c, &cfg, &r, "");
+	struct input_event dr[] = {E(EV_SYN, SYN_DROPPED, 0), E(EV_REL, REL_X, 7), SYN,
+				   E(EV_REL, REL_X, 2), SYN};
+	n = input_process(&d, dr, 5, out);
+	CHECK(n == 2 && out[0].value == 2);
+
+	/* Observe-only keyboard: Esc cancels, but nothing is forwarded. */
+	isetup(&c, &cfg, &r, "");
+	input_dev_t k;
+	memset(&k, 0, sizeof k);
+	k.fd = k.clone_fd = -1;
+	k.keyboard = true;
+	k.state = DEV_ACTIVE;
+	core_button(&c, BTN_MIDDLE, 1);
+	struct input_event esc[] = {E(EV_KEY, KEY_ESC, 1), SYN};
+	n = input_process(&k, esc, 2, out);
+	CHECK(n == 0 && c.state == ST_IDLE);
+
+	/* Grabbed keyboard with a swallowing trigger. */
+	isetup(&c, &cfg, &r, "trigger_vk_code = 0x91\nkeyboard_passthrough = 0\n");
+	k.grab = true;
+	struct input_event sl[] = {E(EV_KEY, KEY_SCROLLLOCK, 1), SYN, E(EV_KEY, KEY_A, 1), SYN};
+	n = input_process(&k, sl, 4, out);
+	CHECK(n == 2 && out[0].code == KEY_A && r.begins == 1);
+}
 
 
 
@@ -311,6 +413,7 @@ int main(void)
 	test_toggle_and_cancel();
 	test_keyboard();
 	test_keymap();
+	test_input();
 	printf("%d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

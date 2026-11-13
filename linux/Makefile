@@ -17,7 +17,10 @@ override LDLIBS   += -lm
 LIB_SRC := $(filter-out src/main.c,$(wildcard src/*.c))
 LIB_OBJ := $(LIB_SRC:src/%.c=$(BUILD)/%.o)
 
-all: $(LIB_OBJ)
+all: $(BUILD)/wlautoscroll
+
+$(BUILD)/wlautoscroll: $(LIB_OBJ) $(BUILD)/main.o
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 $(BUILD)/test_unit: tests/test_unit.c $(LIB_OBJ)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
