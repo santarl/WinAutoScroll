@@ -10,6 +10,7 @@
 #include "../src/keymap.h"
 #include "../src/input.h"
 #include "../src/stats.h"
+#include "../src/draw.h"
 
 #ifndef TOP_CONFIG
 #define TOP_CONFIG "../config.ini"
@@ -445,6 +446,72 @@ static void test_stats(void)
 	if (system(cmd)) {}
 }
 
+static unsigned alpha(uint32_t p) { return p >> 24; }
+
+static void test_draw(void)
+{
+	config_t c;
+	config_defaults(&c);
+	int w, h;
+	draw_size(&c, &w, &h);
+	/* s=26, padding = (int)(6+1+5)=12 -> (26+12)*2 = 76 */
+	CHECK(w == 76 && h == 76);
+
+	uint32_t *px = calloc((size_t)w * h, 4);
+	draw_indicator(px, w, h, &c);
+	int mid = w / 2;
+	/* Default is a ring: empty in the middle, opaque-ish on the ring. */
+	CHECK(alpha(px[mid * w + mid]) == 0);
+	CHECK(alpha(px[mid * w + (mid + 26)]) > 100);  /* on the stroke */
+	CHECK(alpha(px[mid * w + (mid + 40)]) == 0);   /* well outside */
+	CHECK(alpha(px[0]) == 0);                      /* corner untouched */
+
+	/* Premultiplied: no channel may exceed alpha. */
+	int bad = 0;
+	for (int i = 0; i < w * h; i++) {
+		unsigned a = alpha(px[i]);
+		if (((px[i] >> 16) & 255) > a || ((px[i] >> 8) & 255) > a || (px[i] & 255) > a)
+			bad++;
+	}
+	CHECK(bad == 0);
+
+	/* Filled circle is solid in the centre. */
+	config_load_string(&c, "indicator_filled = 1\nindicator_color = #FF0000FF\n");
+	draw_size(&c, &w, &h);
+	px = realloc(px, (size_t)w * h * 4);
+	memset(px, 0, (size_t)w * h * 4);
+	draw_indicator(px, w, h, &c);
+	CHECK(px[(w / 2) * w + w / 2] == 0xFFFF0000u);
+
+	/* Cross: centre filled, a point off-axis diagonal is empty. */
+	config_load_string(&c, "indicator_shape = cross\nindicator_color = #00FF00FF\nshow_outline = 0\n");
+	draw_size(&c, &w, &h);
+	px = realloc(px, (size_t)w * h * 4);
+	memset(px, 0, (size_t)w * h * 4);
+	draw_indicator(px, w, h, &c);
+	CHECK(px[(w / 2) * w + w / 2] == 0xFF00FF00u);
+	CHECK(alpha(px[(w / 2 + 20) * w + (w / 2 + 20)]) == 0);
+	CHECK(alpha(px[(w / 2) * w + (w / 2 + 20)]) == 255); /* along an arm */
+
+	/* PPM dump for eyeballing: WLAS_DUMP=/path/prefix */
+	const char *dump = getenv("WLAS_DUMP");
+	if (dump) {
+		const char *shapes[] = {"circle", "square", "cross"};
+		for (int s = 0; s < 3; s++) {
+			char ini[256], path[512];
+			snprintf(ini, sizeof ini, "indicator_shape = %s\nindicator_color = #FFFFFFB4\n", shapes[s]);
+			config_load_string(&c, ini);
+			draw_size(&c, &w, &h);
+			px = realloc(px, (size_t)w * h * 4);
+			memset(px, 0, (size_t)w * h * 4);
+			draw_indicator(px, w, h, &c);
+			snprintf(path, sizeof path, "%s-%s.raw", dump, shapes[s]);
+			FILE *f = fopen(path, "wb");
+			if (f) { fwrite(px, 4, (size_t)w * h, f); fclose(f); }
+		}
+	}
+	free(px);
+}
 
 int main(void)
 {
@@ -457,6 +524,7 @@ int main(void)
 	test_keymap();
 	test_input();
 	test_stats();
+	test_draw();
 	printf("%d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

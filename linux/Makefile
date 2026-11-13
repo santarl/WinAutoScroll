@@ -32,8 +32,11 @@ $(BUILD):
 	mkdir -p $@
 
 .PHONY: test
-test: $(BUILD)/test_unit
+test: $(BUILD)/test_unit $(BUILD)/wlautoscroll
 	$(BUILD)/test_unit
+	@if command -v python3 >/dev/null 2>&1; then \
+		python3 tests/test_overlay.py $(BUILD)/wlautoscroll; \
+	else echo "python3 not found: skipping overlay test"; fi
 
 
 .PHONY: clean
