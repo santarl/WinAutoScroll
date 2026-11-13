@@ -1,0 +1,185 @@
+name: Linux (Wayland)
+
+on:
+  push:
+    branches: [main]
+    tags: ['v[0-9]+']
+    paths:
+      - 'linux/**'
+      - 'config.ini'
+      - '.github/workflows/linux.yml'
+  pull_request:
+    paths:
+      - 'linux/**'
+      - 'config.ini'
+      - '.github/workflows/linux.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version to publish (e.g. v8). Leave empty to only build and test.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Non-empty only when this run should publish a release.
+  RELEASE_TAG: ${{ inputs.version || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || '' }}
+
+jobs:
+  build:
+    name: Build & test (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64,  runner: ubuntu-22.04 }
+          - { arch: aarch64, runner: ubuntu-22.04-arm }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Work out version
+        id: ver
+        run: |
+          if [ -n "$RELEASE_TAG" ]; then VER="${RELEASE_TAG#v}"; else VER="0.$(git rev-list --count HEAD)"; fi
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+      - name: Unit tests + mock-compositor overlay test
+        run: make -C linux VERSION="${{ steps.ver.outputs.version }}" test
+
+      - name: Build
+        run: make -C linux VERSION="${{ steps.ver.outputs.version }}"
+
+      - name: Package tarball
+        run: |
+          VER="${{ steps.ver.outputs.version }}"
+          make -C linux VERSION="$VER" DESTDIR="$PWD/stage" PREFIX=/usr install
+          strip "stage/usr/bin/wlautoscroll"
+          NAME="wlautoscroll-$VER-linux-${{ matrix.arch }}"
+          tar -C stage --owner=0 --group=0 -czf "$NAME.tar.gz" usr
+          sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: |
+            wlautoscroll-*.tar.gz
+            wlautoscroll-*.tar.gz.sha256
+
+  arch-package:
+    name: Arch package (x86_64)
+    runs-on: ubuntu-22.04
+    container: archlinux:base-devel
+    steps:
+      - name: Install tools
+        run: pacman -Syu --noconfirm git python sudo
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build package with makepkg
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          if [ -n "$RELEASE_TAG" ]; then VER="${RELEASE_TAG#v}"; else VER="0.$(git rev-list --count HEAD)"; fi
+
+          useradd -m builder
+          echo 'builder ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder
+          install -d -o builder -g builder /home/builder/pkg
+          cd /home/builder/pkg
+
+          # Same tarball layout GitHub serves for a tag (WinAutoScroll-<ver>/), built from
+          # this checkout, so the release PKGBUILD is tested exactly as the AUR will use it.
+          git -C "$GITHUB_WORKSPACE" archive --format=tar.gz --prefix="WinAutoScroll-$VER/" \
+            -o "/home/builder/pkg/wlautoscroll-$VER.tar.gz" HEAD
+          cp "$GITHUB_WORKSPACE"/linux/pkg/aur/wlautoscroll/{PKGBUILD,wlautoscroll.install} .
+          sed -i "s/^pkgver=.*/pkgver=$VER/; s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          chown -R builder:builder /home/builder/pkg
+
+          su builder -c 'cd ~/pkg && makepkg -sf --noconfirm'
+          cp /home/builder/pkg/*.pkg.tar.zst "$GITHUB_WORKSPACE"/
+          cd "$GITHUB_WORKSPACE" && sha256sum ./*.pkg.tar.zst > "wlautoscroll-$VER-pkg.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch-package
+          path: |
+            *.pkg.tar.zst
+            *-pkg.sha256
+
+  release:
+    name: Publish GitHub release
+    needs: [build, arch-package]
+    if: ${{ github.event_name != 'pull_request' && (inputs.version || startsWith(github.ref, 'refs/tags/v')) }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Attach Linux artifacts to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  aur:
+    name: Publish to AUR
+    needs: release
+    runs-on: ubuntu-22.04
+    env:
+      # Secrets can't be used in `if:` directly; expose "is it set" instead.
+      HAS_AUR_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set release version in PKGBUILD
+        if: env.HAS_AUR_KEY == 'true'
+        run: |
+          sed -i "s/^pkgver=.*/pkgver=${RELEASE_TAG#v}/; s/^pkgrel=.*/pkgrel=1/" \
+            linux/pkg/aur/wlautoscroll/PKGBUILD
+
+      - name: Publish wlautoscroll
+        if: env.HAS_AUR_KEY == 'true'
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
+        with:
+          pkgname: wlautoscroll
+          pkgbuild: linux/pkg/aur/wlautoscroll/PKGBUILD
+          assets: linux/pkg/aur/wlautoscroll/wlautoscroll.install
+          updpkgsums: true
+          test: true
+          commit_username: ${{ vars.AUR_USERNAME || 'snta' }}
+          commit_email: ${{ vars.AUR_EMAIL || 'rfsjay@gmail.com' }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to ${{ env.RELEASE_TAG }}"
+
+      - name: Publish wlautoscroll-git
+        if: env.HAS_AUR_KEY == 'true'
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
+        with:
+          pkgname: wlautoscroll-git
+          pkgbuild: linux/pkg/aur/wlautoscroll-git/PKGBUILD
+          assets: linux/pkg/aur/wlautoscroll-git/wlautoscroll.install
+          test: false
+          commit_username: ${{ vars.AUR_USERNAME || 'snta' }}
+          commit_email: ${{ vars.AUR_EMAIL || 'rfsjay@gmail.com' }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Sync with ${{ env.RELEASE_TAG }}"
+
+      - name: AUR publishing skipped
+        if: env.HAS_AUR_KEY != 'true'
+        run: echo "AUR_SSH_PRIVATE_KEY secret not set; skipping AUR publish (see linux/README.md)."

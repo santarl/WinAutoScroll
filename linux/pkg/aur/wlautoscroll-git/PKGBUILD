@@ -1,0 +1,42 @@
+# Maintainer: snta <rfsjay@gmail.com>
+pkgname=wlautoscroll-git
+pkgver=r0.0000000
+pkgrel=1
+pkgdesc='Middle-click autoscroll for Wayland (port of WinAutoScroll, same config.ini) - git version'
+arch=('x86_64' 'aarch64')
+url='https://github.com/santarl/WinAutoScroll'
+license=('GPL-3.0-only')
+depends=('glibc')
+makedepends=('git' 'gcc' 'make')
+checkdepends=('python')
+provides=('wlautoscroll')
+conflicts=('wlautoscroll')
+options=('!debug')
+install=wlautoscroll.install
+source=("$pkgname::git+$url.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$pkgname"
+  (
+    set -o pipefail
+    git describe --long --tags --abbrev=7 2>/dev/null | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g' ||
+      printf 'r%s.%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+  )
+}
+
+build() {
+  cd "$pkgname"
+  make -C linux VERSION="$pkgver"
+}
+
+check() {
+  cd "$pkgname"
+  make -C linux VERSION="$pkgver" test
+}
+
+package() {
+  cd "$pkgname"
+  make -C linux VERSION="$pkgver" DESTDIR="$pkgdir" PREFIX=/usr install
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

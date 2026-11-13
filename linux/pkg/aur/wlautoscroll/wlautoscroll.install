@@ -1,0 +1,25 @@
+post_install() {
+  # Make the new udev rule / uinput module take effect without a reboot.
+  modprobe uinput 2>/dev/null || true
+  udevadm control --reload 2>/dev/null || true
+  udevadm trigger --subsystem-match=misc --sysname-match=uinput 2>/dev/null || true
+
+  cat <<'MSG'
+==> wlautoscroll needs access to /dev/input/event* and /dev/uinput.
+    Add yourself to the 'input' group, then log out and back in:
+
+        sudo usermod -aG input "$USER"
+
+    Then start it with your session:
+
+        systemctl --user enable --now wlautoscroll.service
+
+    Config goes in ~/.config/wlautoscroll/config.ini (same format as
+    WinAutoScroll); an example is in /usr/share/doc/wlautoscroll/config.ini.
+    Note: members of 'input' can read all keyboard/mouse events.
+MSG
+}
+
+post_upgrade() {
+  udevadm control --reload 2>/dev/null || true
+}

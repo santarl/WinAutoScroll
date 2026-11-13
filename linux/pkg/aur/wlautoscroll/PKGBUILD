@@ -1,0 +1,31 @@
+# Maintainer: snta <rfsjay@gmail.com>
+pkgname=wlautoscroll
+pkgver=8
+pkgrel=1
+pkgdesc='Middle-click autoscroll for Wayland (port of WinAutoScroll, same config.ini)'
+arch=('x86_64' 'aarch64')
+url='https://github.com/santarl/WinAutoScroll'
+license=('GPL-3.0-only')
+depends=('glibc')
+makedepends=('gcc' 'make')
+checkdepends=('python')
+options=('!debug')
+install=wlautoscroll.install
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "WinAutoScroll-$pkgver"
+  make -C linux VERSION="$pkgver"
+}
+
+check() {
+  cd "WinAutoScroll-$pkgver"
+  make -C linux VERSION="$pkgver" test
+}
+
+package() {
+  cd "WinAutoScroll-$pkgver"
+  make -C linux VERSION="$pkgver" DESTDIR="$pkgdir" PREFIX=/usr install
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
