@@ -1,0 +1,18 @@
+[Unit]
+Description=Middle-click autoscroll for Wayland (wlautoscroll)
+Documentation=https://github.com/santarl/WinAutoScroll
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/wlautoscroll
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=2
+# Input devices are grabbed while this runs; drop the grab promptly on stop.
+TimeoutStopSec=3
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=graphical-session.target

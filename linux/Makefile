@@ -38,6 +38,15 @@ test: $(BUILD)/test_unit $(BUILD)/wlautoscroll
 		python3 tests/test_overlay.py $(BUILD)/wlautoscroll; \
 	else echo "python3 not found: skipping overlay test"; fi
 
+DESTDIR ?=
+
+.PHONY: install
+install: $(BUILD)/wlautoscroll
+	install -Dm755 $(BUILD)/wlautoscroll $(DESTDIR)$(PREFIX)/bin/wlautoscroll
+	install -Dm644 dist/60-wlautoscroll.rules $(DESTDIR)$(PREFIX)/lib/udev/rules.d/60-wlautoscroll.rules
+	install -Dm644 dist/wlautoscroll.conf $(DESTDIR)$(PREFIX)/lib/modules-load.d/wlautoscroll.conf
+	install -Dm644 dist/wlautoscroll.service $(DESTDIR)$(PREFIX)/lib/systemd/user/wlautoscroll.service
+	install -Dm644 ../config.ini $(DESTDIR)$(PREFIX)/share/doc/wlautoscroll/config.ini
 
 .PHONY: clean
 clean:

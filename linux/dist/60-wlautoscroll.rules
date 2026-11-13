@@ -1,0 +1,3 @@
+# wlautoscroll creates virtual mouse/wheel devices through /dev/uinput.
+# Give the 'input' group (which can already read /dev/input/event*) access.
+KERNEL=="uinput", SUBSYSTEM=="misc", GROUP="input", MODE="0660", OPTIONS+="static_node=uinput"
