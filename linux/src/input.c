@@ -11,6 +11,7 @@
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <sys/inotify.h>
 
 #include "log.h"
 
@@ -29,6 +30,7 @@ static struct {
 	input_dev_t *cur;        /* device whose events are being processed */
 	struct input_event *cur_out;
 	int *cur_no;
+	fdh_t inotify_h;
 } g = {.wheel_fd = -1};
 
 /* ------------------------------------------------------------------ */
@@ -524,3 +526,51 @@ int input_init(core_t *core, const config_t *cfg)
 	return 0;
 }
 
+/* ------------------------------------------------------------------ */
+/* hotplug                                                             */
+/* ------------------------------------------------------------------ */
+
+static void inotify_cb(fdh_t *h, unsigned events)
+{
+	char buf[4096] __attribute__((aligned(8)));
+	ssize_t r = read(h->fd, buf, sizeof buf);
+	bool rescan = false;
+	for (char *p = buf; r > 0 && p < buf + r;) {
+		struct inotify_event *ie = (struct inotify_event *)p;
+		p += sizeof *ie + ie->len;
+		if (strncmp(ie->name, "event", 5))
+			continue;
+		if (ie->mask & IN_DELETE) {
+			char path[320];
+			snprintf(path, sizeof path, "/dev/input/%s", ie->name);
+			input_dev_t *d = find_dev(path);
+			if (d && d->state == DEV_ACTIVE)
+				remove_dev(d); /* usually the read already failed first */
+			else if (d) {
+				for (input_dev_t **pp = &g.devs; *pp; pp = &(*pp)->next)
+					if (*pp == d) {
+						*pp = d->next;
+						break;
+					}
+				loop_defer(free_dev, d);
+			}
+		} else {
+			rescan = true; /* IN_CREATE, or IN_ATTRIB once udev fixed permissions */
+		}
+	}
+	if (rescan)
+		input_scan();
+}
+
+int input_hotplug_start(void)
+{
+	int fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+	if (fd < 0)
+		return -1;
+	if (inotify_add_watch(fd, "/dev/input", IN_CREATE | IN_DELETE | IN_ATTRIB) < 0) {
+		close(fd);
+		return -1;
+	}
+	g.inotify_h = (fdh_t){.fd = fd, .cb = inotify_cb};
+	return loop_add(&g.inotify_h, EPOLLIN);
+}

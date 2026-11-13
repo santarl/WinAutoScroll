@@ -74,5 +74,7 @@ void input_nudge(void);
 int input_process(input_dev_t *d, const struct input_event *in, int n,
 		  struct input_event *out);
 
+/* Watch /dev/input for hot-plugged devices. */
+int input_hotplug_start(void);
 
 #endif

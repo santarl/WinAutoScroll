@@ -20,6 +20,7 @@
 #include "log.h"
 #include "loop.h"
 #include "overlay.h"
+#include "stats.h"
 
 #ifndef WLAS_VERSION
 #define WLAS_VERSION "dev"
@@ -32,6 +33,7 @@ static struct {
 	char explicit_cfg[512];
 	int timer_fd;
 	fdh_t timer_h, sig_h;
+	char stats_path[512];
 } g;
 
 /* ------------------------------------------------------------------ */
@@ -122,6 +124,10 @@ static void on_end(void *ud)
 {
 	arm_timer(0);
 	overlay_hide();
+	if (g.cfg.fun_stats && g.core.stats_dirty) {
+		stats_save(&g.core.stats, g.stats_path);
+		g.core.stats_dirty = false;
+	}
 	LOGD("autoscroll stopped");
 }
 
@@ -196,6 +202,7 @@ static void usage(FILE *f)
 		"  -c, --config FILE      config.ini to use (same format as WinAutoScroll)\n"
 		"  -v, --verbose          debug logging\n"
 		"  -q, --quiet            errors only\n"
+		"      --stats            print saved scroll statistics and exit\n"
 		"      --test-overlay[=S] show the indicator at the pointer for S seconds (default 3)\n"
 		"  -V, --version\n"
 		"  -h, --help\n\n"
@@ -207,6 +214,7 @@ static void usage(FILE *f)
 int main(int argc, char **argv)
 {
 	double test_overlay = -1;
+	int show_stats = 0;
 
 	for (int i = 1; i < argc; i++) {
 		const char *a = argv[i];
@@ -224,6 +232,8 @@ int main(int argc, char **argv)
 			snprintf(g.explicit_cfg, sizeof g.explicit_cfg, "%s", argv[++i]);
 		} else if (!strncmp(a, "--config=", 9)) {
 			snprintf(g.explicit_cfg, sizeof g.explicit_cfg, "%s", a + 9);
+		} else if (!strcmp(a, "--stats")) {
+			show_stats = 1;
 		} else if (!strncmp(a, "--test-overlay", 14)) {
 			test_overlay = a[14] == '=' ? atof(a + 15) : 3.0;
 		} else {
@@ -234,6 +244,13 @@ int main(int argc, char **argv)
 	}
 
 	load_config();
+	stats_default_path(g.stats_path, sizeof g.stats_path);
+	if (show_stats) {
+		stats_t s;
+		stats_load(&s, g.stats_path);
+		stats_print(stdout, &s);
+		return 0;
+	}
 
 	if (test_overlay >= 0) {
 		int fl = overlay_show(&g.cfg);
@@ -276,10 +293,14 @@ int main(int argc, char **argv)
 
 	core_ops_t ops = {on_emit_middle, on_scroll, on_begin, on_end};
 	core_init(&g.core, &g.cfg, &ops, NULL);
+	if (g.cfg.fun_stats)
+		stats_load(&g.core.stats, g.stats_path);
 
 	if (input_init(&g.core, &g.cfg) < 0)
 		return 1;
 	input_scan();
+	if (input_hotplug_start() < 0)
+		LOGI("hotplug unavailable; devices are only detected at startup");
 
 	LOGI("ready (%s mode, %s)", g.cfg.trigger_mode == MODE_HOLD ? "hold" : "toggle",
 	     config_freeze_pointer(&g.cfg) ? "pointer frozen while scrolling" : "pointer follows mouse");
@@ -287,5 +308,7 @@ int main(int argc, char **argv)
 
 	core_stop(&g.core);
 	input_shutdown();
+	if (g.cfg.fun_stats)
+		stats_save(&g.core.stats, g.stats_path);
 	return 0;
 }

@@ -9,6 +9,7 @@
 #include "../src/core.h"
 #include "../src/keymap.h"
 #include "../src/input.h"
+#include "../src/stats.h"
 
 #ifndef TOP_CONFIG
 #define TOP_CONFIG "../config.ini"
@@ -402,6 +403,47 @@ static void test_input(void)
 	CHECK(n == 2 && out[0].code == KEY_A && r.begins == 1);
 }
 
+static void test_stats(void)
+{
+	char dir[] = "/tmp/wlas-test-XXXXXX";
+	CHECK(mkdtemp(dir) != NULL);
+	char path[300];
+	snprintf(path, sizeof path, "%s/a/b/stats.ini", dir); /* parents get created */
+
+	stats_t s = {.total = 1234567890123ULL, .up = 1, .down = 2, .left = 3, .right = 4, .session = 99};
+	CHECK(stats_save(&s, path) == 0);
+	stats_t l;
+	CHECK(stats_load(&l, path) == 0);
+	CHECK(memcmp(&s, &l, sizeof s) == 0);
+
+	/* A stats.ini written by the Windows build (CRLF, same keys) loads too. */
+	FILE *f = fopen(path, "w");
+	fputs("[Stats]\r\nTotalPixels=96\r\nUp=5\r\nDown=6\r\nLeft=7\r\nRight=8\r\nUnuploaded=9\r\n", f);
+	fclose(f);
+	CHECK(stats_load(&l, path) == 0);
+	CHECK(l.total == 96 && l.up == 5 && l.down == 6 && l.left == 7 && l.right == 8 && l.session == 9);
+	CHECK(stats_load(&l, "/nonexistent/x.ini") != 0 && l.total == 0);
+
+	char buf[512] = "";
+	FILE *m = fmemopen(buf, sizeof buf, "w");
+	stats_t p = {.total = 96};
+	stats_print(m, &p);
+	fclose(m);
+	CHECK(strstr(buf, "0.03 virtual metres") != NULL); /* 96px = 1 inch = 0.0254 m */
+
+	/* The engine feeds the counters: 300px down in line mode. */
+	core_t c; config_t cfg; rec_t r;
+	setup(&c, &cfg, &r, "");
+	core_button(&c, BTN_MIDDLE, 1);
+	core_motion(&c, 0, 300);
+	core_tick(&c);
+	CHECK(c.stats.total == 81 && c.stats.down == 81 && c.stats.up == 0 && c.stats_dirty);
+	core_button(&c, BTN_MIDDLE, 0);
+
+	char cmd[400];
+	snprintf(cmd, sizeof cmd, "rm -rf %s", dir);
+	if (system(cmd)) {}
+}
 
 
 int main(void)
@@ -414,6 +456,7 @@ int main(void)
 	test_keyboard();
 	test_keymap();
 	test_input();
+	test_stats();
 	printf("%d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }
